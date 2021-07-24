@@ -111,10 +111,122 @@ enum class StatusCode {
     NetworkAuthenticationRequired = 511,
 };
 
+namespace {
+    constexpr std::array<char, 256> getToLowerTable()
+    {
+        std::array<char, 256> table = {};
+        for (size_t i = 0; i < 256; ++i) {
+            table[i] = static_cast<char>(static_cast<uint8_t>(i));
+            if (i >= 'A' && i <= 'Z') {
+                table[i] -= 'A' - 'a';
+            }
+        }
+        return table;
+    }
+
+    // No fucking LOCALES, DUDE (FUCK THEEEEEM)
+    char toLower(char c)
+    {
+        static auto table = getToLowerTable();
+        return table[static_cast<uint8_t>(c)];
+    }
+
+    bool ciEqual(std::string_view a, std::string_view b)
+    {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (toLower(a[i]) != toLower(b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool isHttpWhitespace(char c)
+    {
+        return c == ' ' || c == '\t';
+    }
+}
+
+template <typename StringType>
+class HeaderMap {
+public:
+    bool contains(std::string_view name) const
+    {
+        return find(name) < headers_.size();
+    }
+
+    std::optional<std::string_view> get(std::string_view name) const
+    {
+        const auto i = find(name);
+        if (i < headers_.size()) {
+            return headers_[i].second;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    std::vector<std::string_view> getAll(std::string_view name) const
+    {
+        std::vector<std::string_view> values;
+        for (const auto& [k, v] : headers_) {
+            if (ciEqual(k, name)) {
+                values.push_back(v);
+            }
+        }
+        return values;
+    }
+
+    void add(std::string_view name, std::string_view value)
+    {
+        headers_.emplace_back(StringType(name), StringType(value));
+    }
+
+    size_t set(std::string_view name, std::string_view value)
+    {
+        size_t removed = 0;
+        for (auto it = headers_.begin(); it != headers_.end();) {
+            if (ciEqual(it->first, name)) {
+                it = headers_.erase(it);
+                removed++;
+            } else {
+                ++it;
+            }
+        }
+        add(name, value);
+        return removed;
+    }
+
+    std::optional<std::string_view> operator[](std::string_view name) const
+    {
+        return get(name);
+    }
+
+    const std::vector<std::pair<StringType, StringType>>& getEntries() const
+    {
+        return headers_;
+    }
+
+private:
+    size_t find(std::string_view name) const
+    {
+        for (size_t i = 0; i < headers_.size(); ++i) {
+            if (ciEqual(headers_[i].first, name)) {
+                return i;
+            }
+        }
+        return std::numeric_limits<size_t>::max();
+    }
+
+    std::vector<std::pair<StringType, StringType>> headers_;
+};
+
 struct Request {
     Method method;
     std::string_view url;
-    std::unordered_map<std::string_view, std::string_view> headers;
+    HeaderMap<std::string_view> headers;
     std::string_view body;
 };
 
@@ -136,7 +248,8 @@ struct Response {
     {
         std::string s;
         auto size = 12 + 2; // status line
-        for (const auto& [name, value] : headers) {
+        const auto headerEntries = headers.getEntries();
+        for (const auto& [name, value] : headerEntries) {
             size += name.size() + value.size() + 4;
         }
         size += 2;
@@ -144,7 +257,7 @@ struct Response {
         s.append("HTTP/1.1 ");
         s.append(std::to_string(static_cast<int>(code)));
         s.append("\r\n");
-        for (const auto& [name, value] : headers) {
+        for (const auto& [name, value] : headerEntries) {
             s.append(name);
             s.append(": ");
             s.append(value);
@@ -156,7 +269,7 @@ struct Response {
     }
 
     StatusCode code = StatusCode::Ok;
-    std::vector<std::pair<std::string, std::string>> headers = {};
+    HeaderMap<std::string> headers;
     std::string body = {};
 };
 
@@ -265,6 +378,42 @@ private:
             }
             req.url = request.substr(cursor, urlLen);
 
+            size_t lineStart = request.find("\r\n");
+            if (lineStart == std::string_view::npos) {
+                return std::nullopt;
+            }
+            lineStart += 2;
+
+            while (lineStart < request.size()) {
+                const auto lineEnd = request.find("\r\n", lineStart);
+                if (lineEnd == std::string_view::npos) {
+                    return std::nullopt;
+                }
+                if (lineStart == lineEnd) {
+                    // skip newlines and end header parsing
+                    lineStart += 2;
+                    break;
+                } else {
+                    const auto line = request.substr(lineStart, lineEnd - lineStart);
+                    auto colon = line.find(':');
+                    if (colon == std::string_view::npos) {
+                        return std::nullopt;
+                    }
+                    const auto name = line.substr(0, colon);
+                    auto valueStart = colon + 1;
+                    while (valueStart < line.size() && isHttpWhitespace(line[valueStart])) {
+                        valueStart++;
+                    }
+                    auto valueEnd = valueStart;
+                    while (valueEnd < line.size() && !isHttpWhitespace(line[valueEnd])) {
+                        valueEnd++;
+                    }
+                    const auto value = line.substr(valueStart, valueEnd - valueStart);
+                    req.headers.add(name, value);
+                    lineStart = lineEnd + 2;
+                }
+            }
+
             return req;
         }
 
@@ -277,7 +426,10 @@ private:
             }
             for (const auto& route : routes_) {
                 if (route.match(*request)) {
-                    const auto resp = route.handler(*request);
+                    auto resp = route.handler(*request);
+                    if (resp.body.size() > 0) {
+                        resp.headers.set("Content-Length", std::to_string(resp.body.size()));
+                    }
                     respondAndClose(resp.string());
                     return;
                 }
@@ -377,7 +529,19 @@ int main()
     std::cout << "Starting HTTP server.." << std::endl;
     Http::Server http;
     http.route(
-        "/", Http::Method::Get, [](const Http::Request&) -> Http::Response { return "Hi!"s; });
+        "/", Http::Method::Get, [](const Http::Request&) -> Http::Response { return "Hello!"s; });
+    http.route("/headers", Http::Method::Get, [](const Http::Request& req) -> Http::Response {
+        std::string s;
+        s.reserve(1024);
+        for (const auto [name, value] : req.headers.getEntries()) {
+            s.append("'");
+            s.append(name);
+            s.append("' = '");
+            s.append(value);
+            s.append("'\n");
+        }
+        return s;
+    });
     http.route("/foo", Http::Method::Get,
         [](const Http::Request&) -> Http::Response { return "This is foo"s; });
     http.start();
