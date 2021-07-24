@@ -374,6 +374,7 @@ private:
 
 int main()
 {
+    std::cout << "Starting HTTP server.." << std::endl;
     Http::Server http;
     http.route(
         "/", Http::Method::Get, [](const Http::Request&) -> Http::Response { return "Hi!"s; });

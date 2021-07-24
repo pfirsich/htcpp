@@ -20,6 +20,24 @@ public:
         : completionHandlers_(size)
     {
         ring_.init(size);
+        if (!(ring_.getParams().features & IORING_FEAT_NODROP)) {
+            std::cerr << "io_uring does not support NODROP" << std::endl;
+            std::exit(1);
+        }
+        if (!(ring_.getParams().features & IORING_FEAT_SUBMIT_STABLE)) {
+            std::cerr << "io_uring does not support SUBMIT_STABLE" << std::endl;
+            std::exit(1);
+        }
+    }
+
+    size_t getSize() const
+    {
+        return ring_.getNumSqeEntries();
+    }
+
+    size_t getCapacity() const
+    {
+        return ring_.getSqeCapacity();
     }
 
     // res argument is socket fd
@@ -95,6 +113,10 @@ private:
     template <typename Callback>
     void addSqe(io_uring_sqe* sqe, Callback&& cb)
     {
+        if (!sqe) {
+            std::cerr << "io_uring full" << std::endl;
+            return;
+        }
         sqe->user_data = addHandler(std::move(cb));
         ring_.submitSqes();
     }
@@ -102,6 +124,10 @@ private:
     template <typename Callback>
     void addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback&& cb)
     {
+        if (!sqe) {
+            std::cerr << "io_uring full" << std::endl;
+            return;
+        }
         sqe->user_data = addHandler(std::move(cb));
         sqe->flags |= IOSQE_IO_LINK;
         __kernel_timespec ts;
