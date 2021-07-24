@@ -16,10 +16,10 @@ public:
     using HandlerEc = std::function<void(std::error_code ec)>;
     using HandlerEcRes = std::function<void(std::error_code ec, int res)>;
 
-    IoQueue()
-        : completionHandlers_(1024)
+    IoQueue(size_t size = 1024)
+        : completionHandlers_(size)
     {
-        ring_.init();
+        ring_.init(size);
     }
 
     // res argument is socket fd

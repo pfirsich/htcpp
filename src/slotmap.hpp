@@ -51,14 +51,12 @@ public:
     size_t emplace(Args&&... args)
     {
         const auto idx = getNewIndex();
-        std::cout << "emplace " << idx << std::endl;
         data_.emplace(idx, std::forward<Args>(args)...);
         return idx;
     }
 
     void remove(size_t index)
     {
-        std::cout << "remove " << index << std::endl;
         assert(data_.contains(index));
         data_.remove(index);
         freeList_.push(index);
@@ -66,7 +64,6 @@ public:
 
     T& operator[](size_t index)
     {
-        std::cout << "get " << index << std::endl;
         assert(data_.contains(index));
         return data_[index];
     }

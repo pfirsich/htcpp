@@ -1,6 +1,9 @@
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <queue>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -14,6 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "config.hpp"
 #include "fd.hpp"
 #include "ioqueue.hpp"
 
@@ -159,7 +163,9 @@ struct Response {
 class Server {
 public:
     Server()
-        : listenSocket_(createTcpListenSocket(6969))
+        : io_(Config::get().ioQueueSize)
+        , listenSocket_(createTcpListenSocket(
+              Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
     {
         if (listenSocket_ == -1) {
             std::cerr << "Could not create listen socket: "
@@ -200,23 +206,20 @@ private:
             , fd_(fd)
             , routes_(routes)
         {
-            request_.reserve(512);
+            request_.reserve(Config::get().defaultRequestSize);
         }
 
         ~Connection()
         {
-            std::cout << "I died" << std::endl;
         }
 
         void start()
         {
-            std::cout << "start" << std::endl;
             readSome();
         }
 
         void close()
         {
-            std::cout << "close" << std::endl;
             io_.close(fd_, [self = shared_from_this()](std::error_code /*ec*/) {});
         }
 
@@ -256,8 +259,7 @@ private:
             req.method = *method;
             cursor += methodDelim + 1;
 
-            constexpr size_t maxUrlLength = 2048;
-            const auto urlLen = request.substr(cursor, maxUrlLength).find(' ');
+            const auto urlLen = request.substr(cursor, Config::get().maxUrlLength).find(' ');
             if (urlLen == std::string::npos) {
                 return std::nullopt;
             }
@@ -286,13 +288,12 @@ private:
 
         void readSome()
         {
-            std::cout << "read" << std::endl;
-            constexpr size_t readAmount = 128;
+            const auto readAmount = Config::get().readAmount;
             const auto currentSize = request_.size();
             request_.append(readAmount, '\0');
             auto buf = request_.data() + currentSize;
             io_.recv(fd_, buf, readAmount,
-                [this, self = shared_from_this()](std::error_code ec, int readBytes) {
+                [this, self = shared_from_this(), readAmount](std::error_code ec, int readBytes) {
                     if (ec) {
                         std::cerr << "Error in read: " << ec.message() << std::endl;
                         close();
@@ -318,7 +319,7 @@ private:
     };
 
     static Fd createTcpListenSocket(
-        uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 128)
+        uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024)
     {
         Fd fd { ::socket(AF_INET, SOCK_STREAM, 0) };
         if (fd == -1)
@@ -354,7 +355,6 @@ private:
 
     void handleAccept(std::error_code ec, int fd)
     {
-        std::cout << "handle" << std::endl;
         if (ec) {
             std::cerr << "Error: " << ec.message() << std::endl;
             std::exit(1);
