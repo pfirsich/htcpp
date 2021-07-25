@@ -223,9 +223,16 @@ private:
     std::vector<std::pair<StringType, StringType>> headers_;
 };
 
+struct UrlView {
+    std::string_view full;
+    std::string_view path;
+    std::string_view query;
+    std::string_view fragment;
+};
+
 struct Request {
     Method method;
-    std::string_view url;
+    UrlView url;
     HeaderMap<std::string_view> headers;
     std::string_view body;
 };
@@ -306,7 +313,7 @@ private:
 
         bool match(const Request& request) const
         {
-            return method == request.method && url == request.url;
+            return method == request.method && url == request.url.path;
         }
     };
 
@@ -355,16 +362,16 @@ private:
             return std::nullopt;
         }
 
-        std::optional<Request> parseRequest(std::string_view request)
+        std::optional<Request> parseRequest(std::string_view requestStr)
         {
             // e.g.: GET /foobar/barbar http/1.1\r\nHost: example.org\r\n\r\n
             Request req;
             size_t cursor = 0;
-            const auto methodDelim = request.substr(cursor, 8).find(' ');
+            const auto methodDelim = requestStr.substr(cursor, 8).find(' ');
             if (methodDelim == std::string::npos) {
                 return std::nullopt;
             }
-            const auto methodStr = request.substr(cursor, methodDelim);
+            const auto methodStr = requestStr.substr(cursor, methodDelim);
             const auto method = parseMethod(methodStr);
             if (!method) {
                 return std::nullopt;
@@ -372,20 +379,29 @@ private:
             req.method = *method;
             cursor += methodDelim + 1;
 
-            const auto urlLen = request.substr(cursor, Config::get().maxUrlLength).find(' ');
+            const auto urlLen = requestStr.substr(cursor, Config::get().maxUrlLength).find(' ');
             if (urlLen == std::string::npos) {
                 return std::nullopt;
             }
-            req.url = request.substr(cursor, urlLen);
+            req.url.full = requestStr.substr(cursor, urlLen);
+            const auto queryStart = req.url.full.find('?');
+            req.url.path = req.url.full.substr(0, queryStart);
+            if (queryStart != std::string_view::npos) {
+                const auto fragmentStart = req.url.full.find('#');
+                req.url.query = req.url.full.substr(queryStart, fragmentStart - queryStart);
+                if (fragmentStart != std::string_view::npos) {
+                    req.url.fragment = req.url.full.substr(fragmentStart);
+                }
+            }
 
-            size_t lineStart = request.find("\r\n");
+            size_t lineStart = requestStr.find("\r\n");
             if (lineStart == std::string_view::npos) {
                 return std::nullopt;
             }
             lineStart += 2;
 
-            while (lineStart < request.size()) {
-                const auto lineEnd = request.find("\r\n", lineStart);
+            while (lineStart < requestStr.size()) {
+                const auto lineEnd = requestStr.find("\r\n", lineStart);
                 if (lineEnd == std::string_view::npos) {
                     return std::nullopt;
                 }
@@ -394,7 +410,7 @@ private:
                     lineStart += 2;
                     break;
                 } else {
-                    const auto line = request.substr(lineStart, lineEnd - lineStart);
+                    const auto line = requestStr.substr(lineStart, lineEnd - lineStart);
                     auto colon = line.find(':');
                     if (colon == std::string_view::npos) {
                         return std::nullopt;
