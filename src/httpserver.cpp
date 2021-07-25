@@ -148,6 +148,22 @@ namespace {
     {
         return c == ' ' || c == '\t';
     }
+
+    std::vector<std::string_view> split(std::string_view str, char delim)
+    {
+        std::vector<std::string_view> parts;
+        size_t i = 0;
+        while (i < str.size()) {
+            const auto delimPos = str.find(delim, i);
+            if (delimPos == std::string_view::npos) {
+                break;
+            }
+            parts.push_back(str.substr(i, delimPos - i));
+            i = delimPos + 1;
+        }
+        parts.push_back(str.substr(i));
+        return parts;
+    }
 }
 
 template <typename StringType>
@@ -235,6 +251,8 @@ struct Request {
     UrlView url;
     HeaderMap<std::string_view> headers;
     std::string_view body;
+
+    std::unordered_map<std::string_view, std::string_view> params;
 };
 
 struct Response {
@@ -300,21 +318,94 @@ public:
         io_.run();
     }
 
-    void route(std::string url, Method method, std::function<Response(const Request&)> handler)
+    void route(std::string_view pattern, std::function<Response(const Request&)> handler)
     {
-        routes_.push_back(Route { url, method, handler });
+        routes_.push_back(
+            Route { Route::Pattern::parse(pattern), Method::Get, std::move(handler) });
+    }
+
+    void route(
+        std::string_view pattern, Method method, std::function<Response(const Request&)> handler)
+    {
+        routes_.push_back(Route { Route::Pattern::parse(pattern), method, std::move(handler) });
     }
 
 private:
     struct Route {
-        std::string url;
+        struct Pattern {
+            struct Part {
+                enum class Type {
+                    Literal,
+                    Placeholder,
+                    PlaceholderPath,
+                };
+
+                Type type;
+                std::string_view str;
+            };
+
+            std::string pattern;
+            std::vector<Part> parts;
+
+            static Pattern parse(std::string_view str)
+            {
+                Pattern pattern { std::string(str), {} };
+                for (const auto& part : split(str, '/')) {
+                    if (!part.empty() && part[0] == ':') {
+                        if (part.back() == '*') {
+                            pattern.parts.push_back(Part {
+                                Part::Type::PlaceholderPath, part.substr(1, part.size() - 2) });
+                        } else {
+                            pattern.parts.push_back(
+                                Part { Part::Type::Placeholder, part.substr(1) });
+                        }
+                    } else {
+                        pattern.parts.push_back(Part { Part::Type::Literal, part });
+                    }
+                }
+                return pattern;
+            }
+
+            std::optional<std::unordered_map<std::string_view, std::string_view>> match(
+                std::string_view urlPath) const
+            {
+                size_t cursor = 0;
+                std::unordered_map<std::string_view, std::string_view> params;
+                for (size_t i = 0; i < parts.size(); ++i) {
+                    if (parts[i].type == Part::Type::Literal
+                        || parts[i].type == Part::Type::Placeholder) {
+                        const auto slash = std::min(urlPath.find('/', cursor), urlPath.size());
+                        const auto urlPart = urlPath.substr(cursor, slash - cursor);
+                        if (parts[i].type == Part::Type::Literal) {
+                            if (parts[i].str != urlPart) {
+                                return std::nullopt;
+                            }
+                        } else {
+                            assert(parts[i].type == Part::Type::Placeholder);
+                            params[parts[i].str] = urlPart;
+                        }
+                        // We have reached the end of urlPath, but there are pattern parts left
+                        if (cursor >= urlPath.size() && i < parts.size() - 1) {
+                            return std::nullopt;
+                        }
+                        cursor = slash + 1;
+                    } else {
+                        assert(parts[i].type == Part::Type::PlaceholderPath);
+                        params[parts[i].str] = urlPath.substr(cursor);
+                        return params;
+                    }
+                }
+                // Not the whole urlPath has been consumed => no complete match
+                if (cursor < urlPath.size()) {
+                    return std::nullopt;
+                }
+                return params;
+            }
+        };
+
+        Pattern pattern;
         Method method;
         std::function<Response(const Request&)> handler;
-
-        bool match(const Request& request) const
-        {
-            return method == request.method && url == request.url.path;
-        }
     };
 
     // A connection will have ownership of itself and decide on its own when it's time to be
@@ -441,7 +532,9 @@ private:
                 return;
             }
             for (const auto& route : routes_) {
-                if (route.match(*request)) {
+                auto params = route.pattern.match(request->url.path);
+                if (params) {
+                    request->params = std::move(*params);
                     auto resp = route.handler(*request);
                     if (resp.body.size() > 0) {
                         resp.headers.set("Content-Length", std::to_string(resp.body.size()));
@@ -544,21 +637,39 @@ int main()
 {
     std::cout << "Starting HTTP server.." << std::endl;
     Http::Server http;
+
     http.route(
         "/", Http::Method::Get, [](const Http::Request&) -> Http::Response { return "Hello!"s; });
-    http.route("/headers", Http::Method::Get, [](const Http::Request& req) -> Http::Response {
+
+    http.route("/foo", Http::Method::Get,
+        [](const Http::Request&) -> Http::Response { return "This is foo"s; });
+
+    http.route("/headers", [](const Http::Request& req) -> Http::Response {
         std::string s;
         s.reserve(1024);
         for (const auto [name, value] : req.headers.getEntries()) {
-            s.append("'");
-            s.append(name);
-            s.append("' = '");
-            s.append(value);
-            s.append("'\n");
+            s.append("'" + std::string(name) + "' = '" + std::string(value) + "'\n");
         }
         return s;
     });
-    http.route("/foo", Http::Method::Get,
-        [](const Http::Request&) -> Http::Response { return "This is foo"s; });
+
+    http.route("/users/:uid", [](const Http::Request& req) -> Http::Response {
+        return "User #'" + std::string(req.params.at("uid")) + "'";
+    });
+
+    http.route("/users/:uid/name", [](const Http::Request& req) -> Http::Response {
+        return "User name for #'" + std::string(req.params.at("uid")) + "'";
+    });
+
+    http.route("/users/:uid/friends/:fid", [](const Http::Request& req) -> Http::Response {
+        return "Friend #'" + std::string(req.params.at("fid")) + "' for user '"
+            + std::string(req.params.at("uid")) + "'";
+    });
+
+    http.route("/users/:uid/files/:path*", [](const Http::Request& req) -> Http::Response {
+        return "File '" + std::string(req.params.at("path")) + "' for user '"
+            + std::string(req.params.at("uid")) + "'";
+    });
+
     http.start();
 }
