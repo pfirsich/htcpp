@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <limits>
 #include <system_error>
 
 #include "iouring.hpp"

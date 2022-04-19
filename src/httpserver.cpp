@@ -661,7 +661,7 @@ int main()
     http.route("/headers", [](const Http::Request& req) -> Http::Response {
         std::string s;
         s.reserve(1024);
-        for (const auto [name, value] : req.headers.getEntries()) {
+        for (const auto& [name, value] : req.headers.getEntries()) {
             s.append("'" + std::string(name) + "' = '" + std::string(value) + "'\n");
         }
         return s;
