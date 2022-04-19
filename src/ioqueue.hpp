@@ -41,32 +41,33 @@ public:
     }
 
     // res argument is socket fd
-    void accept(int fd, sockaddr_in* addr, HandlerEcRes cb)
+    bool accept(int fd, sockaddr_in* addr, HandlerEcRes cb)
     {
         socklen_t addrlen = 0;
-        addSqe(ring_.prepareAccept(fd, reinterpret_cast<sockaddr*>(addr), &addrlen), std::move(cb));
+        return addSqe(
+            ring_.prepareAccept(fd, reinterpret_cast<sockaddr*>(addr), &addrlen), std::move(cb));
     }
 
     // res argument is sent bytes
-    void send(int sockfd, const void* buf, size_t len, HandlerEcRes cb)
+    bool send(int sockfd, const void* buf, size_t len, HandlerEcRes cb)
     {
-        addSqe(ring_.prepareSend(sockfd, buf, len), std::move(cb));
+        return addSqe(ring_.prepareSend(sockfd, buf, len), std::move(cb));
     }
 
     // res argument is received bytes
-    void recv(int sockfd, void* buf, size_t len, HandlerEcRes cb)
+    bool recv(int sockfd, void* buf, size_t len, HandlerEcRes cb)
     {
-        addSqe(ring_.prepareRecv(sockfd, buf, len), std::move(cb));
+        return addSqe(ring_.prepareRecv(sockfd, buf, len), std::move(cb));
     }
 
-    void recv(int sockfd, void* buf, size_t len, uint64_t timeoutMs, HandlerEcRes cb)
+    bool recv(int sockfd, void* buf, size_t len, uint64_t timeoutMs, HandlerEcRes cb)
     {
-        addSqe(ring_.prepareRecv(sockfd, buf, len), timeoutMs, std::move(cb));
+        return addSqe(ring_.prepareRecv(sockfd, buf, len), timeoutMs, std::move(cb));
     }
 
-    void close(int fd, HandlerEc cb)
+    bool close(int fd, HandlerEc cb)
     {
-        addSqe(ring_.prepareClose(fd), std::move(cb));
+        return addSqe(ring_.prepareClose(fd), std::move(cb));
     }
 
     void run()
@@ -111,22 +112,23 @@ private:
     }
 
     template <typename Callback>
-    void addSqe(io_uring_sqe* sqe, Callback&& cb)
+    bool addSqe(io_uring_sqe* sqe, Callback&& cb)
     {
         if (!sqe) {
             std::cerr << "io_uring full" << std::endl;
-            return;
+            return false;
         }
         sqe->user_data = addHandler(std::move(cb));
         ring_.submitSqes();
+        return true;
     }
 
     template <typename Callback>
-    void addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback&& cb)
+    bool addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback&& cb)
     {
         if (!sqe) {
             std::cerr << "io_uring full" << std::endl;
-            return;
+            return false;
         }
         sqe->user_data = addHandler(std::move(cb));
         sqe->flags |= IOSQE_IO_LINK;
@@ -136,6 +138,7 @@ private:
         auto timeoutSqe = ring_.prepareLinkTimeout(&ts);
         timeoutSqe->user_data = Ignore;
         ring_.submitSqes();
+        return true;
     }
 
     IoURing ring_;

@@ -610,8 +610,22 @@ private:
 
     void accept()
     {
-        io_.accept(
-            listenSocket_, nullptr, [this](std::error_code ec, int fd) { handleAccept(ec, fd); });
+        // In the past there was a bug, where too many concurrent requests would fill up the SQR
+        // with reads and writes so that it would run full and you could not add an accept SQE.
+        // Essentially too high concurrency would push out the accept task and the server would stop
+        // accepting connections.
+        // For some reason I cannot reproduce it anymore. Maybe *something* has changed with a newer
+        // kernel, but I can't imagine what that would be.
+        // I will fix it anyway, because it should be dead code, if everything goes right anyways.
+        // So essentially we *force* an accept SQE into the SQR by retrying again and again.
+        // This is a busy loop, because we *really* want to get that accept into the SQR and we
+        // don't have to worry about priority inversion (I think) because it's the kernel that's
+        // consuming the currently present items.
+        bool added = false;
+        while (!added) {
+            added = io_.accept(listenSocket_, nullptr,
+                [this](std::error_code ec, int fd) { handleAccept(ec, fd); });
+        }
     }
 
     void handleAccept(std::error_code ec, int fd)
