@@ -1,8 +1,11 @@
 #pragma once
 
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <system_error>
+
+#include <netinet/in.h>
 
 #include "iouring.hpp"
 #include "slotmap.hpp"
@@ -17,100 +20,30 @@ public:
     using HandlerEc = std::function<void(std::error_code ec)>;
     using HandlerEcRes = std::function<void(std::error_code ec, int res)>;
 
-    IoQueue(size_t size = 1024)
-        : completionHandlers_(size)
-    {
-        ring_.init(size);
-        if (!(ring_.getParams().features & IORING_FEAT_NODROP)) {
-            std::cerr << "io_uring does not support NODROP" << std::endl;
-            std::exit(1);
-        }
-        if (!(ring_.getParams().features & IORING_FEAT_SUBMIT_STABLE)) {
-            std::cerr << "io_uring does not support SUBMIT_STABLE" << std::endl;
-            std::exit(1);
-        }
-    }
+    IoQueue(size_t size = 1024);
 
-    size_t getSize() const
-    {
-        return ring_.getNumSqeEntries();
-    }
+    size_t getSize() const;
 
-    size_t getCapacity() const
-    {
-        return ring_.getSqeCapacity();
-    }
+    size_t getCapacity() const;
 
     // res argument is socket fd
-    bool accept(int fd, sockaddr_in* addr, HandlerEcRes cb)
-    {
-        socklen_t addrlen = 0;
-        return addSqe(
-            ring_.prepareAccept(fd, reinterpret_cast<sockaddr*>(addr), &addrlen), std::move(cb));
-    }
+    bool accept(int fd, sockaddr_in* addr, HandlerEcRes cb);
 
     // res argument is sent bytes
-    bool send(int sockfd, const void* buf, size_t len, HandlerEcRes cb)
-    {
-        return addSqe(ring_.prepareSend(sockfd, buf, len), std::move(cb));
-    }
+    bool send(int sockfd, const void* buf, size_t len, HandlerEcRes cb);
 
     // res argument is received bytes
-    bool recv(int sockfd, void* buf, size_t len, HandlerEcRes cb)
-    {
-        return addSqe(ring_.prepareRecv(sockfd, buf, len), std::move(cb));
-    }
+    bool recv(int sockfd, void* buf, size_t len, HandlerEcRes cb);
 
-    bool recv(int sockfd, void* buf, size_t len, uint64_t timeoutMs, HandlerEcRes cb)
-    {
-        return addSqe(ring_.prepareRecv(sockfd, buf, len), timeoutMs, std::move(cb));
-    }
+    bool recv(int sockfd, void* buf, size_t len, uint64_t timeoutMs, HandlerEcRes cb);
 
-    bool close(int fd, HandlerEc cb)
-    {
-        return addSqe(ring_.prepareClose(fd), std::move(cb));
-    }
+    bool close(int fd, HandlerEc cb);
 
-    void run()
-    {
-        while (true) {
-            const auto cqe = ring_.waitCqe();
-            assert(cqe);
-
-            if (cqe->user_data != Ignore) {
-                assert(completionHandlers_.contains(cqe->user_data));
-                auto ch = std::move(completionHandlers_[cqe->user_data]);
-                ch(cqe);
-                completionHandlers_.remove(cqe->user_data);
-                ring_.advanceCq();
-            } else {
-                std::cout << "ignored" << std::endl;
-            }
-        }
-    }
+    void run();
 
 private:
-    size_t addHandler(HandlerEc&& cb)
-    {
-        return completionHandlers_.emplace([cb = std::move(cb)](const io_uring_cqe* cqe) {
-            if (cqe->res < 0) {
-                cb(std::make_error_code(static_cast<std::errc>(-cqe->res)));
-            } else {
-                cb(std::error_code());
-            }
-        });
-    }
-
-    size_t addHandler(HandlerEcRes&& cb)
-    {
-        return completionHandlers_.emplace([cb = std::move(cb)](const io_uring_cqe* cqe) {
-            if (cqe->res < 0) {
-                cb(std::make_error_code(static_cast<std::errc>(-cqe->res)), -1);
-            } else {
-                cb(std::error_code(), cqe->res);
-            }
-        });
-    }
+    size_t addHandler(HandlerEc&& cb);
+    size_t addHandler(HandlerEcRes&& cb);
 
     template <typename Callback>
     bool addSqe(io_uring_sqe* sqe, Callback&& cb)

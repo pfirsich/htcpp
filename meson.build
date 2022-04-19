@@ -4,8 +4,13 @@ liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_
 threads = dependency('threads')
 
 src = [
+  'src/config.cpp',
   'src/fd.cpp',
-  'src/httpserver.cpp'
+  'src/http.cpp',
+  'src/ioqueue.cpp',
+  'src/main.cpp',
+  'src/server.cpp',
+  'src/string.cpp',
 ]
 executable('httpserver', src, include_directories : ['src'],
   dependencies : [threads, liburingpp_dep])

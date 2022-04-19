@@ -1,5 +1,7 @@
 #pragma once
 
+#include <netinet/in.h>
+
 struct Config {
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
@@ -12,9 +14,5 @@ struct Config {
     size_t maxRequestSize = 8192; // todo
     size_t defaultRequestSize = 512; // Initial buffer size
 
-    static Config& get()
-    {
-        static Config config;
-        return config;
-    }
+    static Config& get();
 };
