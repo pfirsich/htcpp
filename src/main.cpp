@@ -1,69 +1,12 @@
 #include "config.hpp"
 #include "fd.hpp"
+#include "filecache.hpp"
 #include "http.hpp"
 #include "ioqueue.hpp"
 #include "router.hpp"
 #include "server.hpp"
 
 using namespace std::literals;
-
-class FileCache {
-public:
-    // As this server is fully single-threaded, we can get away with returning a reference
-    // because the reference might only be invalidated after the handler that is using it
-    // has finished. If this server was multi-threaded we should return shared_ptr here instead.
-    // If std::optional<T&> was a thing, I would return that instead.
-    const std::string* get(const std::string& path)
-    {
-        const auto it = entries_.find(path);
-        if (it == entries_.end()) {
-            const auto content = readFile(path);
-            if (!content) {
-                return nullptr;
-            }
-            const auto res = entries_.emplace(path, Entry { path, *content });
-            return &res.first->second.contents;
-        }
-        return &it->second.contents;
-    }
-
-private:
-    static std::optional<std::string> readFile(const std::string& path)
-    {
-        auto f = std::unique_ptr<FILE, decltype(&std::fclose)>(
-            std::fopen(path.c_str(), "rb"), &std::fclose);
-        if (!f) {
-            std::cerr << "Could not open file '" << path << "'" << std::endl;
-            return std::nullopt;
-        }
-        if (std::fseek(f.get(), 0, SEEK_END) != 0) {
-            std::cerr << "Error seeking to end of '" << path << "'" << std::endl;
-            return std::nullopt;
-        }
-        const auto size = std::ftell(f.get());
-        if (size < 0) {
-            std::cerr << "Error getting size of '" << path << "'" << std::endl;
-            return std::nullopt;
-        }
-        if (std::fseek(f.get(), 0, SEEK_SET) != 0) {
-            std::cerr << "Error seeking to start of '" << path << "'" << std::endl;
-            return std::nullopt;
-        }
-        std::string buf(size, '\0');
-        if (std::fread(buf.data(), 1, size, f.get()) != static_cast<size_t>(size)) {
-            std::cerr << "Error reading file '" << path << "'" << std::endl;
-            return std::nullopt;
-        }
-        return buf;
-    }
-
-    struct Entry {
-        std::string path;
-        std::string contents;
-    };
-
-    std::unordered_map<std::string, Entry> entries_;
-};
 
 int main()
 {
@@ -81,7 +24,7 @@ int main()
 
     IoQueue io(config.ioQueueSize);
 
-    FileCache fileCache;
+    FileCache fileCache(io);
 
     Router router;
 
