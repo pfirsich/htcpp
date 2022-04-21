@@ -1,5 +1,7 @@
 #include "http.hpp"
 
+#include <cassert>
+
 #include "config.hpp"
 
 std::optional<Method> parseMethod(std::string_view method)
@@ -10,37 +12,189 @@ std::optional<Method> parseMethod(std::string_view method)
     return std::nullopt;
 }
 
+namespace {
+template <typename T>
+bool startsWith(const T& str, std::string_view needle)
+{
+    return str.substr(0, needle.size()) == needle;
+}
+
+std::string removeDotSegments(std::string_view input)
+{
+    // RFC3986, 5.2.4: Remove Dot Segments
+    // This algorithm is a bit different, because of the following assert (ensured in Url::parse).
+    // If we leave the trailing slashes in the input buffer, we know that after every step in the
+    // loop below, inputLeft still starts with a slash.
+    assert(!input.empty() && input[0] == '/');
+    std::string output;
+    output.reserve(input.size());
+    while (!input.empty()) {
+        assert(input[0] == '/');
+
+        if (input == "/") {
+            output.push_back('/');
+            break;
+        } else {
+            // I think it's not very clear, why this works in all cases, but if I go through all
+            // cases one by one instead, it's just a bunch of ifs with the same code in each branch.
+            const auto segmentLength = input.find('/', 1);
+            const auto segment = input.substr(0, segmentLength);
+
+            if (segment == "/.") {
+                // do nothing
+            } else if (segment == "/..") {
+                // Removing trailing segment (including slash) from output buffer
+                const auto lastSlash = output.rfind('/');
+                if (lastSlash != std::string::npos) {
+                    output.resize(lastSlash);
+                } else {
+                    // Considering that every segment starts with a slash, output must be empty
+                    assert(output.empty());
+                }
+            } else {
+                output.append(segment);
+            }
+
+            if (segmentLength == std::string_view::npos) {
+                break;
+            } else {
+                input = input.substr(segmentLength);
+            }
+        }
+    }
+    if (output.empty()) {
+        output.push_back('/');
+    }
+    return output;
+}
+
+bool isAlphaNum(char ch)
+{
+    return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || (ch >= 'A' || ch <= 'Z');
+}
+
+bool isSchemeChar(char ch)
+{
+    return isAlphaNum(ch) || ch == '+' || ch == '.' || ch == '-';
+}
+}
+
+std::optional<Url> Url::parse(std::string_view urlStr)
+{
+    constexpr auto npos = std::string_view::npos;
+
+    Url url;
+    url.fullRaw = urlStr;
+
+    // see RFC2515, 5.1.2
+    if (url.fullRaw == "*") {
+        return url;
+    }
+
+    // I don't *actually* support CONNECT, so I will not parse authority URIs.
+
+    // RFC1808, 2.4.1: The fragment is not technically part of the URL
+    const auto fragmentStart = urlStr.find('#');
+    if (fragmentStart != npos) {
+        url.fragment = urlStr.substr(fragmentStart + 1);
+        urlStr = urlStr.substr(0, fragmentStart);
+    }
+
+    if (urlStr.empty()) {
+        return std::nullopt;
+    }
+
+    // The other possible URLs are absoluteURI and abs_path and I have to parse absoluteURI:
+    // "To allow for transition to absoluteURIs in all requests in future
+    // versions of HTTP, all HTTP / 1.1 servers MUST accept the absoluteURI form in requests, even
+    // though HTTP/1.1 clients will only generate them in requests to proxies."
+    // I won't save any of the URI components that are part of absoluteURI (and not abs_path)
+    // because I don't need them (even though I should).
+    const auto colon = urlStr.find(':');
+    if (colon != npos) {
+        // RFC1808, 2.4.2: If all characters up to this colon are valid characters for a scheme,
+        // [0, colon) is a scheme.
+        bool isScheme = true;
+        for (size_t i = 0; i < colon; ++i) {
+            if (!isSchemeChar(urlStr[i])) {
+                isScheme = false;
+                break;
+            }
+        }
+
+        if (isScheme) {
+            // If we wanted to save the scheme
+            urlStr = urlStr.substr(colon + 1);
+        }
+    }
+
+    // RFC1808, 2.4.3
+    if (urlStr.size() >= 2 && urlStr.substr(0, 2) == "//") {
+        // I MUST (RFC2616, 5.2) with 400 if net_loc does not contain a valid host for this server,
+        // but I don't want to add configuration for this, so I choose to be more "lenient" here and
+        // ignore it completely. choose to be more "lenient" here and simply ignore it completely.
+        urlStr = urlStr.substr(2, urlStr.find("/", 2));
+    }
+
+    // RFC1808, 2.4.4
+    const auto queryStart = urlStr.find('?');
+    if (queryStart != npos) {
+        url.query = urlStr.substr(queryStart + 1);
+        urlStr = urlStr.substr(0, queryStart);
+    }
+
+    // RFC1808, 2.4.5
+    const auto paramsStart = urlStr.find(';');
+    if (paramsStart != npos) {
+        url.params = urlStr.substr(paramsStart + 1);
+        urlStr = urlStr.substr(0, paramsStart);
+    }
+
+    // If the URI is absoluteURI, we jumped to the slash, otherwise it has to be
+    // abs_path, which must start with a slash. (RFC1808, 2.2)
+    if (urlStr.empty() || urlStr[0] != '/') {
+        return std::nullopt;
+    }
+    url.path = removeDotSegments(urlStr);
+
+    return url;
+}
+
 std::optional<Request> Request::parse(std::string_view requestStr)
 {
     // e.g.: GET /foobar/barbar http/1.1\r\nHost: example.org\r\n\r\n
     Request req;
+
+    const auto requestLineEnd = requestStr.find('\n');
+    if (requestLineEnd == std::string::npos) {
+        return std::nullopt;
+    }
+    const auto requestLine = requestStr.substr(0, requestLineEnd);
+
     size_t cursor = 0;
-    const auto methodDelim = requestStr.substr(cursor, 8).find(' ');
+    const auto methodDelim = requestLine.substr(cursor, 8).find(' ');
     if (methodDelim == std::string::npos) {
         return std::nullopt;
     }
-    const auto methodStr = requestStr.substr(cursor, methodDelim);
+    const auto methodStr = requestLine.substr(cursor, methodDelim);
     const auto method = parseMethod(methodStr);
     if (!method) {
         return std::nullopt;
     }
     req.method = *method;
+    // I could skip all whitespace here to be more robust, but RFC2616 5.1 only mentions 1 SP
     cursor += methodDelim + 1;
 
-    const auto urlLen = requestStr.substr(cursor, Config::get().maxUrlLength).find(' ');
+    // SHOULD actually return "414 Request-URI Too Long" here (RFC2616 3.2.1)
+    const auto urlLen = requestLine.substr(cursor, Config::get().maxUrlLength).find(' ');
     if (urlLen == std::string::npos) {
         return std::nullopt;
     }
-    req.url.full = requestStr.substr(cursor, urlLen);
-    const auto queryStart = req.url.full.find('?');
-    req.url.path = req.url.full.substr(0, queryStart);
-    if (queryStart != std::string_view::npos) {
-        const auto fragmentStart = req.url.full.find('#');
-        req.url.query = req.url.full.substr(queryStart, fragmentStart - queryStart);
-        if (fragmentStart != std::string_view::npos) {
-            req.url.fragment = req.url.full.substr(fragmentStart);
-        }
+    const auto url = Url::parse(requestLine.substr(cursor, urlLen));
+    if (!url) {
+        return std::nullopt;
     }
+    req.url = url.value();
 
     size_t lineStart = requestStr.find("\r\n");
     if (lineStart == std::string_view::npos) {

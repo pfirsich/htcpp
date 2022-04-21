@@ -169,16 +169,21 @@ private:
     std::vector<std::pair<StringType, StringType>> headers_;
 };
 
-struct UrlView {
-    std::string_view full;
-    std::string_view path;
-    std::string_view query;
-    std::string_view fragment;
+struct Url {
+    std::string_view fullRaw;
+    // It would be nice, if these could be string_views, but because of percent decoding and
+    // removing dot segments, we have to create copies.
+    std::string path;
+    std::string params;
+    std::string query;
+    std::string fragment; // This is not technically considered part of the URL (RFC1808)
+
+    static std::optional<Url> parse(std::string_view urlStr);
 };
 
 struct Request {
     Method method;
-    UrlView url;
+    Url url;
     HeaderMap<std::string_view> headers;
     std::string_view body;
 
