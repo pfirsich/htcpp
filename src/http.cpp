@@ -235,15 +235,22 @@ std::optional<Request> Request::parse(std::string_view requestStr)
     return req;
 }
 
+Response::Response()
+{
+    headers.add("Connection", "close");
+}
+
 Response::Response(std::string body)
     : body(std::move(body))
 {
+    headers.add("Connection", "close");
 }
 
 Response::Response(StatusCode code, std::string body)
     : code(code)
     , body(std::move(body))
 {
+    headers.add("Connection", "close");
 }
 
 std::string Response::string() const
