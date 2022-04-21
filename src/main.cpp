@@ -2,6 +2,7 @@
 #include "fd.hpp"
 #include "http.hpp"
 #include "ioqueue.hpp"
+#include "router.hpp"
 #include "server.hpp"
 
 using namespace std::literals;
@@ -78,14 +79,19 @@ int main()
     std::cout << "maxRequestSize: " << config.maxRequestSize << std::endl;
     std::cout << "defaultRequestSize: " << config.defaultRequestSize << std::endl;
 
-    Server server;
+    IoQueue io(config.ioQueueSize);
+
     FileCache fileCache;
 
-    server.route("/", Method::Get, [](const Request&) -> Response { return "Hello!"s; });
+    Router router;
 
-    server.route("/foo", Method::Get, [](const Request&) -> Response { return "This is foo"s; });
+    router.route("/", Method::Get,
+        [](const Request&, const Router::RouteParams&) -> Response { return "Hello!"s; });
 
-    server.route("/headers", [](const Request& req) -> Response {
+    router.route("/foo", Method::Get,
+        [](const Request&, const Router::RouteParams&) -> Response { return "This is foo"s; });
+
+    router.route("/headers", [](const Request& req, const Router::RouteParams&) -> Response {
         std::string s;
         s.reserve(1024);
         for (const auto& [name, value] : req.headers.getEntries()) {
@@ -94,31 +100,36 @@ int main()
         return s;
     });
 
-    server.route("/users/:uid", [](const Request& req) -> Response {
-        return "User #'" + std::string(req.params.at("uid")) + "'";
+    router.route("/users/:uid", [](const Request&, const Router::RouteParams& params) -> Response {
+        return "User #'" + std::string(params.at("uid")) + "'";
     });
 
-    server.route("/users/:uid/name", [](const Request& req) -> Response {
-        return "User name for #'" + std::string(req.params.at("uid")) + "'";
-    });
+    router.route(
+        "/users/:uid/name", [](const Request&, const Router::RouteParams& params) -> Response {
+            return "User name for #'" + std::string(params.at("uid")) + "'";
+        });
 
-    server.route("/users/:uid/friends/:fid", [](const Request& req) -> Response {
-        return "Friend #'" + std::string(req.params.at("fid")) + "' for user '"
-            + std::string(req.params.at("uid")) + "'";
-    });
+    router.route("/users/:uid/friends/:fid",
+        [](const Request&, const Router::RouteParams& params) -> Response {
+            return "Friend #'" + std::string(params.at("fid")) + "' for user '"
+                + std::string(params.at("uid")) + "'";
+        });
 
-    server.route("/users/:uid/files/:path*", [](const Request& req) -> Response {
-        return "File '" + std::string(req.params.at("path")) + "' for user '"
-            + std::string(req.params.at("uid")) + "'";
-    });
+    router.route("/users/:uid/files/:path*",
+        [](const Request&, const Router::RouteParams& params) -> Response {
+            return "File '" + std::string(params.at("path")) + "' for user '"
+                + std::string(params.at("uid")) + "'";
+        });
 
-    server.route("/file/:path*", [&fileCache](const Request& req) -> Response {
-        const auto f = fileCache.get(std::string(req.params.at("path")));
-        if (!f) {
-            return Response(StatusCode::NotFound, "Not Found");
-        }
-        return *f;
-    });
+    router.route("/file/:path*",
+        [&fileCache](const Request&, const Router::RouteParams& params) -> Response {
+            const auto f = fileCache.get(std::string(params.at("path")));
+            if (!f) {
+                return Response(StatusCode::NotFound, "Not Found");
+            }
+            return *f;
+        });
 
+    Server server(io, router);
     server.start();
 }

@@ -11,10 +11,11 @@
 
 #include "config.hpp"
 
-Server::Server()
-    : io_(Config::get().ioQueueSize)
+Server::Server(IoQueue& io, std::function<Response(const Request&)> handler)
+    : io_(io)
     , listenSocket_(createTcpListenSocket(
           Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
+    , handler_(std::move(handler))
 {
     if (listenSocket_ == -1) {
         std::cerr << "Could not create listen socket: "
@@ -29,74 +30,11 @@ void Server::start()
     io_.run();
 }
 
-void Server::route(std::string_view pattern, std::function<Response(const Request&)> handler)
-{
-    routes_.push_back(Route { Route::Pattern::parse(pattern), Method::Get, std::move(handler) });
-}
-
-void Server::route(
-    std::string_view pattern, Method method, std::function<Response(const Request&)> handler)
-{
-    routes_.push_back(Route { Route::Pattern::parse(pattern), method, std::move(handler) });
-}
-
-Server::Route::Pattern Server::Route::Pattern::parse(std::string_view str)
-{
-    Pattern pattern { std::string(str), {} };
-    for (const auto& part : split(str, '/')) {
-        if (!part.empty() && part[0] == ':') {
-            if (part.back() == '*') {
-                pattern.parts.push_back(
-                    Part { Part::Type::PlaceholderPath, part.substr(1, part.size() - 2) });
-            } else {
-                pattern.parts.push_back(Part { Part::Type::Placeholder, part.substr(1) });
-            }
-        } else {
-            pattern.parts.push_back(Part { Part::Type::Literal, part });
-        }
-    }
-    return pattern;
-}
-
-std::optional<std::unordered_map<std::string_view, std::string_view>> Server::Route::Pattern::match(
-    std::string_view urlPath) const
-{
-    size_t cursor = 0;
-    std::unordered_map<std::string_view, std::string_view> params;
-    for (size_t i = 0; i < parts.size(); ++i) {
-        if (parts[i].type == Part::Type::Literal || parts[i].type == Part::Type::Placeholder) {
-            const auto slash = std::min(urlPath.find('/', cursor), urlPath.size());
-            const auto urlPart = urlPath.substr(cursor, slash - cursor);
-            if (parts[i].type == Part::Type::Literal) {
-                if (parts[i].str != urlPart) {
-                    return std::nullopt;
-                }
-            } else {
-                assert(parts[i].type == Part::Type::Placeholder);
-                params[parts[i].str] = urlPart;
-            }
-            // We have reached the end of urlPath, but there are pattern parts left
-            if (cursor >= urlPath.size() && i < parts.size() - 1) {
-                return std::nullopt;
-            }
-            cursor = slash + 1;
-        } else {
-            assert(parts[i].type == Part::Type::PlaceholderPath);
-            params[parts[i].str] = urlPath.substr(cursor);
-            return params;
-        }
-    }
-    // Not the whole urlPath has been consumed => no complete match
-    if (cursor < urlPath.size()) {
-        return std::nullopt;
-    }
-    return params;
-}
-
-Server::Connection::Connection(IoQueue& io, int fd, const std::vector<Server::Route>& routes)
+Server::Connection::Connection(
+    IoQueue& io, std::function<Response(const Request&)>& handler, int fd)
     : io_(io)
+    , handler_(handler)
     , fd_(fd)
-    , routes_(routes)
 {
     request_.reserve(Config::get().defaultRequestSize);
 }
@@ -124,20 +62,7 @@ void Server::Connection::processRequest(std::string_view requestStr)
         respondAndClose(badRequest);
         return;
     }
-    for (const auto& route : routes_) {
-        auto params = route.pattern.match(request->url.path);
-        if (params) {
-            request->params = std::move(*params);
-            auto resp = route.handler(*request);
-            if (resp.body.size() > 0) {
-                resp.headers.set("Content-Length", std::to_string(resp.body.size()));
-            }
-            respondAndClose(resp.string());
-            return;
-        }
-    }
-    // No matching route
-    respondAndClose("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+    respondAndClose(handler_(*request).string());
 }
 
 void Server::Connection::readSome()
@@ -221,7 +146,7 @@ void Server::handleAccept(std::error_code ec, int fd)
         std::exit(1);
     }
 
-    auto conn = std::make_shared<Connection>(io_, fd, routes_);
+    auto conn = std::make_shared<Connection>(io_, handler_, fd);
     conn->start();
 
     accept();

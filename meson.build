@@ -9,6 +9,7 @@ src = [
   'src/http.cpp',
   'src/ioqueue.cpp',
   'src/main.cpp',
+  'src/router.cpp',
   'src/server.cpp',
   'src/string.cpp',
 ]
