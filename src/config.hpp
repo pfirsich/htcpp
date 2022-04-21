@@ -10,7 +10,7 @@ struct Config {
     size_t readAmount = 128;
     size_t singleReadTimeoutMs = 512; // todo
     size_t fullReadTimeoutMs = 1024; // todo
-    size_t maxUrlLength = 2048;
+    size_t maxUrlLength = 512;
     size_t maxRequestSize = 8192; // todo
     size_t defaultRequestSize = 512; // Initial buffer size
 
