@@ -197,7 +197,11 @@ struct Response {
 
     Response(std::string body);
 
+    Response(std::string body, std::string_view contentType);
+
     Response(StatusCode code, std::string body);
+
+    Response(StatusCode code, std::string body, std::string_view contentType);
 
     std::string string() const;
 

@@ -70,7 +70,7 @@ int main()
             if (!f) {
                 return Response(StatusCode::NotFound, "Not Found");
             }
-            return *f;
+            return Response(*f, "text/plain");
         });
 
     Server server(io, router);
