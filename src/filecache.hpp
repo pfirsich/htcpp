@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "filewatcher.hpp"
 #include "ioqueue.hpp"
 
 // TODO: I should probably reload files in another thread, so it doesn't slow down the server itself
@@ -30,5 +31,6 @@ private:
     };
 
     IoQueue& io_;
+    FileWatcher fileWatcher_;
     std::unordered_map<std::string, File> files_;
 };

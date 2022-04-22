@@ -7,6 +7,7 @@ src = [
   'src/config.cpp',
   'src/fd.cpp',
   'src/filecache.cpp',
+  'src/filewatcher.cpp',
   'src/http.cpp',
   'src/ioqueue.cpp',
   'src/main.cpp',

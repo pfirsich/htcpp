@@ -1,9 +1,11 @@
 #include "filecache.hpp"
 
+#include <iostream>
 #include <memory>
 
 FileCache::FileCache(IoQueue& io)
     : io_(io)
+    , fileWatcher_(io)
 {
 }
 
@@ -16,6 +18,10 @@ const std::string* FileCache::get(const std::string& path)
     auto it = files_.find(path);
     if (it == files_.end()) {
         it = files_.emplace(path, File { path }).first;
+        fileWatcher_.watch(path, [this](std::string_view path) {
+            std::cout << "file changed: " << path << std::endl;
+            files_.at(std::string(path)).dirty = true;
+        });
     }
 
     if (it->second.dirty) {

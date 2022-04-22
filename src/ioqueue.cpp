@@ -51,6 +51,11 @@ bool IoQueue::close(int fd, HandlerEc cb)
     return addSqe(ring_.prepareClose(fd), std::move(cb));
 }
 
+bool IoQueue::poll(int fd, short events, HandlerEcRes cb)
+{
+    return addSqe(ring_.preparePollAdd(fd, events), std::move(cb));
+}
+
 void IoQueue::run()
 {
     while (true) {
