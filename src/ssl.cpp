@@ -77,8 +77,6 @@ SslContext::~SslContext()
     SSL_CTX_free(ctx_);
 }
 
-// PEM cert chain file and PEM private key without password is enough to test
-// and also what certbot spits out, so it is all I need.
 bool SslContext::init(const std::string& certChainPath, const std::string& keyPath)
 {
     std::cout << "Loading certificates from " << certChainPath << std::endl;
