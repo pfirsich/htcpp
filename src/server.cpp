@@ -76,17 +76,18 @@ void Server::Connection::readSome()
             if (ec) {
                 std::cerr << "Error in read: " << ec.message() << std::endl;
                 close();
-            } else {
-                if (readBytes > 0) { // res = 0 => no data left to read
-                    request_.resize(request_.size() - readAmount + readBytes);
-                }
+                return;
+            }
 
-                // Done reading
-                if (readBytes == 0 || static_cast<size_t>(readBytes) < readAmount) {
-                    processRequest(request_);
-                } else {
-                    readSome();
-                }
+            if (readBytes > 0) {
+                request_.resize(request_.size() - readAmount + readBytes);
+            }
+
+            // Done reading
+            if (readBytes == 0 || static_cast<size_t>(readBytes) < readAmount) {
+                processRequest(request_);
+            } else {
+                readSome();
             }
         });
 }
@@ -142,8 +143,8 @@ void Server::accept()
 void Server::handleAccept(std::error_code ec, int fd)
 {
     if (ec) {
-        std::cerr << "Error: " << ec.message() << std::endl;
-        std::exit(1);
+        std::cerr << "Error in accept: " << ec.message() << std::endl;
+        return;
     }
 
     auto conn = std::make_shared<Connection>(io_, handler_, fd);

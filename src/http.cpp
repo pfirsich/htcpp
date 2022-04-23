@@ -13,12 +13,6 @@ std::optional<Method> parseMethod(std::string_view method)
 }
 
 namespace {
-template <typename T>
-bool startsWith(const T& str, std::string_view needle)
-{
-    return str.substr(0, needle.size()) == needle;
-}
-
 std::string removeDotSegments(std::string_view input)
 {
     // RFC3986, 5.2.4: Remove Dot Segments
