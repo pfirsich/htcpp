@@ -5,6 +5,7 @@
 #include "ioqueue.hpp"
 #include "router.hpp"
 #include "server.hpp"
+#include "ssl.hpp"
 
 using namespace std::literals;
 
@@ -21,6 +22,8 @@ int main()
     std::cout << "maxUrlLength: " << config.maxUrlLength << std::endl;
     std::cout << "maxRequestSize: " << config.maxRequestSize << std::endl;
     std::cout << "defaultRequestSize: " << config.defaultRequestSize << std::endl;
+
+    SslContextManager::instance().init("cert.pem", "key.pem");
 
     IoQueue io(config.ioQueueSize);
 

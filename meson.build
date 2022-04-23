@@ -1,7 +1,9 @@
 project('httpserver', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++17'])
 
 liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
-threads = dependency('threads')
+threads_dep = dependency('threads')
+openssl_dep = dependency('openssl')
+
 
 src = [
   'src/config.cpp',
@@ -13,7 +15,8 @@ src = [
   'src/main.cpp',
   'src/router.cpp',
   'src/server.cpp',
+  'src/ssl.cpp',
   'src/string.cpp',
 ]
 executable('httpserver', src, include_directories : ['src'],
-  dependencies : [threads, liburingpp_dep])
+  dependencies : [threads_dep, liburingpp_dep, openssl_dep])
