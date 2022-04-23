@@ -38,7 +38,7 @@ class SslContextManager {
 public:
     static SslContextManager& instance();
 
-    void init(const std::string& certChainPath, const std::string& keyPath);
+    bool init(const std::string& certChainPath, const std::string& keyPath);
 
     std::shared_ptr<SslContext> getCurrentContext();
 
@@ -48,6 +48,8 @@ private:
     SslContextManager(SslContextManager&&) = delete;
     SslContextManager& operator=(const SslContextManager&) = delete;
     SslContextManager& operator=(SslContextManager&&) = delete;
+
+    bool updateContext();
 
     std::string certChainPath_;
     std::string keyPath_;

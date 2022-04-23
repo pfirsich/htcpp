@@ -23,7 +23,9 @@ int main()
     std::cout << "maxRequestSize: " << config.maxRequestSize << std::endl;
     std::cout << "defaultRequestSize: " << config.defaultRequestSize << std::endl;
 
-    SslContextManager::instance().init("cert.pem", "key.pem");
+    if (!SslContextManager::instance().init("cert.pem", "key.pem")) {
+        return 1;
+    }
 
     IoQueue io(config.ioQueueSize);
 

@@ -12,13 +12,15 @@ std::string getSslErrorString()
     std::string errStr = "no error";
     size_t num = 0;
     while (err != 0) {
-        ++num;
         ERR_error_string_n(err, buf, sizeof(buf));
-        if (num > 1) {
+        if (num == 0) {
+            errStr = "";
+        } else {
             errStr.append(", ");
         }
         errStr.append(buf);
         err = ERR_get_error();
+        ++num;
     }
     return errStr;
 }
@@ -77,21 +79,24 @@ SslContextManager& SslContextManager::instance()
     return inst;
 }
 
-void SslContextManager::init(const std::string& certChainPath, const std::string& keyPath)
+bool SslContextManager::init(const std::string& certChainPath, const std::string& keyPath)
 {
     certChainPath_ = certChainPath;
     keyPath_ = keyPath;
+    return updateContext();
 }
 
 std::shared_ptr<SslContext> SslContextManager::getCurrentContext()
 {
-    assert(!certChainPath_.empty() && !keyPath_.empty());
-
-    if (!currentContext_) {
-        currentContext_ = std::make_shared<SslContext>();
-        assert(static_cast<SSL_CTX*>(*currentContext_)); // Handle this later
-        const auto res = currentContext_->init(certChainPath_, keyPath_);
-        assert(res); // Handle this later also
-    }
+    assert(currentContext_);
     return currentContext_;
+}
+
+bool SslContextManager::updateContext()
+{
+    currentContext_ = std::make_shared<SslContext>();
+    if (!static_cast<SSL_CTX*>(*currentContext_)) {
+        return false;
+    }
+    return currentContext_->init(certChainPath_, keyPath_);
 }
