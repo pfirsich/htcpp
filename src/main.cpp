@@ -5,7 +5,9 @@
 #include "ioqueue.hpp"
 #include "router.hpp"
 #include "server.hpp"
+#ifdef OPENSSL_FOUND
 #include "ssl.hpp"
+#endif
 
 using namespace std::literals;
 
