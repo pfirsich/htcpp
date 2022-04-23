@@ -5,6 +5,8 @@
 
 #include <openssl/ssl.h>
 
+#include "server.hpp"
+
 // Must be at least 1.1.1
 static_assert(OPENSSL_VERSION_NUMBER >= 10101000);
 
@@ -16,6 +18,8 @@ static_assert(OPENSSL_VERSION_NUMBER >= 10101000);
 
 // If an error occured, call this or ERR_clear_error() to clear the error queue
 std::string getSslErrorString();
+
+std::string sslErrorToString(int sslError);
 
 class SslContext {
 public:
@@ -54,4 +58,60 @@ private:
     std::string certChainPath_;
     std::string keyPath_;
     std::shared_ptr<SslContext> currentContext_;
+};
+
+struct OpenSslErrorCategoryT : public std::error_category {
+public:
+    const char* name() const noexcept override;
+    std::string message(int errorCode) const override;
+};
+
+extern const OpenSslErrorCategoryT OpenSslErrorCategory;
+
+enum class SslOperation { Read, Write, Shutdown };
+std::string toString(SslOperation op);
+
+template <SslOperation Op>
+struct SslOperationFunc;
+
+template <>
+struct SslOperationFunc<SslOperation::Read> {
+    int operator()(SSL* ssl, void* buffer, int length);
+};
+
+template <>
+struct SslOperationFunc<SslOperation::Write> {
+    int operator()(SSL* ssl, void* buffer, int length);
+};
+
+template <>
+struct SslOperationFunc<SslOperation::Shutdown> {
+    int operator()(SSL* ssl, void*, int);
+};
+
+// This whole thing is *heavily* inspired by what Boost ASIO is doing
+class SslConnection : public TcpConnection {
+public:
+    SslConnection(IoQueue& io, int fd);
+    ~SslConnection();
+
+    void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);
+    void send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler);
+    void shutdown(IoQueue::HandlerEc handler);
+
+    SslConnection(const SslConnection&) = default;
+    SslConnection(SslConnection&&) = default;
+    SslConnection& operator=(const SslConnection&) = default;
+    SslConnection& operator=(SslConnection&&) = default;
+
+private:
+    template <SslOperation Op>
+    void performSslOperation(void* buffer, size_t length, IoQueue::HandlerEcRes handler);
+
+    void tcpShutdown(IoQueue::HandlerEcRes handler);
+
+    SSL* ssl_;
+    BIO* externalBio_ = nullptr;
+    std::vector<char> recvBuffer_;
+    std::vector<char> sendBuffer_;
 };

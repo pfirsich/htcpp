@@ -78,6 +78,7 @@ int main()
             return Response(*f, "text/plain");
         });
 
-    Server<TcpConnection> server(io, router);
+    // Server<TcpConnection> server(io, router);
+    Server<SslConnection> server(io, router);
     server.start();
 }
