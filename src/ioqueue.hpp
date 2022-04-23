@@ -39,6 +39,8 @@ public:
 
     bool close(int fd, HandlerEc cb);
 
+    bool shutdown(int fd, int how, HandlerEc cb);
+
     bool poll(int fd, short events, HandlerEcRes cb);
 
     void run();

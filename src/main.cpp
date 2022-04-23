@@ -76,6 +76,6 @@ int main()
             return Response(*f, "text/plain");
         });
 
-    Server server(io, router);
+    Server<TcpConnection> server(io, router);
     server.start();
 }

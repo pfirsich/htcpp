@@ -9,90 +9,33 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "config.hpp"
-
-Server::Server(IoQueue& io, std::function<Response(const Request&)> handler)
+TcpConnection::TcpConnection(IoQueue& io, int fd)
     : io_(io)
-    , listenSocket_(createTcpListenSocket(
-          Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
-    , handler_(std::move(handler))
-{
-    if (listenSocket_ == -1) {
-        std::cerr << "Could not create listen socket: "
-                  << std::make_error_code(static_cast<std::errc>(errno)).message() << std::endl;
-        std::exit(1);
-    }
-};
-
-void Server::start()
-{
-    accept();
-    io_.run();
-}
-
-Server::Connection::Connection(
-    IoQueue& io, std::function<Response(const Request&)>& handler, int fd)
-    : io_(io)
-    , handler_(handler)
     , fd_(fd)
 {
-    request_.reserve(Config::get().defaultRequestSize);
 }
 
-void Server::Connection::start()
+void TcpConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
-    readSome();
+    io_.recv(fd_, buffer, len, std::move(handler));
 }
 
-void Server::Connection::close()
+void TcpConnection::send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
-    io_.close(fd_, [self = shared_from_this()](std::error_code /*ec*/) {});
+    io_.send(fd_, buffer, len, std::move(handler));
 }
 
-void Server::Connection::respondAndClose(std::string_view response)
+void TcpConnection::shutdown(IoQueue::HandlerEc handler)
 {
-    io_.send(fd_, response.data(), response.size(),
-        [this, self = shared_from_this()](std::error_code /*ec*/, int /*sent*/) { close(); });
+    io_.shutdown(fd_, SHUT_RDWR, std::move(handler));
 }
 
-void Server::Connection::processRequest(std::string_view requestStr)
+void TcpConnection::close()
 {
-    auto request = Request::parse(requestStr);
-    if (!request) {
-        respondAndClose(badRequest);
-        return;
-    }
-    respondAndClose(handler_(*request).string());
+    io_.close(fd_, [](std::error_code /*ec*/) {});
 }
 
-void Server::Connection::readSome()
-{
-    const auto readAmount = Config::get().readAmount;
-    const auto currentSize = request_.size();
-    request_.append(readAmount, '\0');
-    auto buf = request_.data() + currentSize;
-    io_.recv(fd_, buf, readAmount,
-        [this, self = shared_from_this(), readAmount](std::error_code ec, int readBytes) {
-            if (ec) {
-                std::cerr << "Error in read: " << ec.message() << std::endl;
-                close();
-                return;
-            }
-
-            if (readBytes > 0) {
-                request_.resize(request_.size() - readAmount + readBytes);
-            }
-
-            // Done reading
-            if (readBytes == 0 || static_cast<size_t>(readBytes) < readAmount) {
-                processRequest(request_);
-            } else {
-                readSome();
-            }
-        });
-}
-
-Fd Server::createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int backlog)
+Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int backlog)
 {
     Fd fd { ::socket(AF_INET, SOCK_STREAM, 0) };
     if (fd == -1)
@@ -106,49 +49,24 @@ Fd Server::createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int b
 
     const int reuse = 1;
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
+        std::cerr << "Could not set sockopt SO_REUSEADDR" << std::endl;
         return Fd {};
     }
 
     if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) == -1) {
+        std::cerr << "Could not bind to port " << listenPort << std::endl;
         return Fd {};
     }
 
     if (::listen(fd, backlog) == -1) {
+        std::cerr << "Could not listen on socket" << std::endl;
         return Fd {};
     }
 
     return fd;
 }
 
-void Server::accept()
+std::string errnoToString(int err)
 {
-    // In the past there was a bug, where too many concurrent requests would fill up the SQR
-    // with reads and writes so that it would run full and you could not add an accept SQE.
-    // Essentially too high concurrency would push out the accept task and the server would stop
-    // accepting connections.
-    // For some reason I cannot reproduce it anymore. Maybe *something* has changed with a newer
-    // kernel, but I can't imagine what that would be.
-    // I will fix it anyway, because it should be dead code, if everything goes right anyways.
-    // So essentially we *force* an accept SQE into the SQR by retrying again and again.
-    // This is a busy loop, because we *really* want to get that accept into the SQR and we
-    // don't have to worry about priority inversion (I think) because it's the kernel that's
-    // consuming the currently present items.
-    bool added = false;
-    while (!added) {
-        added = io_.accept(
-            listenSocket_, nullptr, [this](std::error_code ec, int fd) { handleAccept(ec, fd); });
-    }
-}
-
-void Server::handleAccept(std::error_code ec, int fd)
-{
-    if (ec) {
-        std::cerr << "Error in accept: " << ec.message() << std::endl;
-        return;
-    }
-
-    auto conn = std::make_shared<Connection>(io_, handler_, fd);
-    conn->start();
-
-    accept();
+    return std::make_error_code(static_cast<std::errc>(err)).message();
 }
