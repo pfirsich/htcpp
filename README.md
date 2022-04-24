@@ -9,7 +9,7 @@ Currently it has the following features:
 * FileCache/FileWatcher to serve files and automatically reload them (using inotify)
 * TLS
 
-It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
+It requires io_uring features that are available since kernel 5.6, so it will exit immediately on earlier kernels.
 
 ## Building
 Install [meson](https://mesonbuild.com/).

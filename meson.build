@@ -13,6 +13,7 @@ src = [
   'src/filewatcher.cpp',
   'src/http.cpp',
   'src/ioqueue.cpp',
+  'src/log.cpp',
   'src/main.cpp',
   'src/router.cpp',
   'src/server.cpp',

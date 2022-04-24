@@ -4,7 +4,7 @@
 
 struct Config {
 #ifdef TLS_SUPPORT_ENABLED
-    bool useTls = true;
+    bool useTls = false;
 #else
     bool useTls = false;
 #endif

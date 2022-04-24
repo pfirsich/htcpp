@@ -8,6 +8,7 @@
 #include "fd.hpp"
 #include "http.hpp"
 #include "ioqueue.hpp"
+#include "log.hpp"
 
 Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024);
 std::string errnoToString(int err);
@@ -56,6 +57,7 @@ private:
             : connection_(io, fd)
             , handler_(handler)
         {
+            rlog::debug("start session");
             requestBuffer_.reserve(Config::get().defaultRequestSize);
         }
 

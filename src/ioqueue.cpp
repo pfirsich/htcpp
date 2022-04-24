@@ -24,6 +24,12 @@ size_t IoQueue::getCapacity() const
     return ring_.getSqeCapacity();
 }
 
+bool IoQueue::write(int fd, const void* buf, size_t len, HandlerEcRes cb)
+{
+    // printf("queue buf: %p, size: %lu\n", buf, len);
+    return addSqe(ring_.prepareWrite(fd, buf, len), std::move(cb));
+}
+
 bool IoQueue::accept(int fd, sockaddr_in* addr, HandlerEcRes cb)
 {
     socklen_t addrlen = 0;

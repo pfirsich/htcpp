@@ -8,6 +8,7 @@
 #ifdef TLS_SUPPORT_ENABLED
 #include "ssl.hpp"
 #endif
+#include "log.hpp"
 
 using namespace std::literals;
 
@@ -38,6 +39,8 @@ int main()
     std::cout << "maxUrlLength: " << config.maxUrlLength << std::endl;
     std::cout << "maxRequestSize: " << config.maxRequestSize << std::endl;
     std::cout << "defaultRequestSize: " << config.defaultRequestSize << std::endl;
+
+    rlog::setLogLevel(rlog::Severity::Debug);
 
 #ifdef TLS_SUPPORT_ENABLED
     if (!SslContextManager::instance().init("cert.pem", "key.pem")) {

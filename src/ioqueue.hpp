@@ -26,6 +26,9 @@ public:
 
     size_t getCapacity() const;
 
+    // res argument is sent bytes
+    bool write(int fd, const void* buf, size_t len, HandlerEcRes cb);
+
     // res argument is socket fd
     bool accept(int fd, sockaddr_in* addr, HandlerEcRes cb);
 
