@@ -5,7 +5,7 @@
 #include "ioqueue.hpp"
 #include "router.hpp"
 #include "server.hpp"
-#ifdef OPENSSL_FOUND
+#ifdef TLS_SUPPORT_ENABLED
 #include "ssl.hpp"
 #endif
 
@@ -15,6 +15,7 @@ int main()
 {
     std::cout << "Starting HTTP server.." << std::endl;
     const auto& config = Config::get();
+    std::cout << "useTls: " << config.useTls << std::endl;
     std::cout << "listenPort: " << config.listenPort << std::endl;
     std::cout << "listenBacklog: " << config.listenBacklog << std::endl;
     std::cout << "ioQueueSize: " << config.ioQueueSize << std::endl;
@@ -80,7 +81,18 @@ int main()
             return Response(*f, "text/plain");
         });
 
-    // Server<TcpConnection> server(io, router);
-    Server<SslConnection> server(io, router);
-    server.start();
+    if (config.useTls) {
+#ifdef TLS_SUPPORT_ENABLED
+        Server<SslConnection> server(io, router);
+        server.start();
+#else
+        std::cerr << "Not compiled with TLS support" << std::endl;
+        return 1;
+#endif
+    } else {
+        Server<TcpConnection> server(io, router);
+        server.start();
+    }
+
+    return 0;
 }

@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 
 struct Config {
+    bool useTls = true;
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
     size_t listenBacklog = SOMAXCONN;

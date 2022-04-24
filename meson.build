@@ -21,8 +21,9 @@ src = [
 
 if openssl_dep.found()
   src += 'src/ssl.cpp'
-  flags += '-DOPENSSL_FOUND'
+  flags += '-DTLS_SUPPORT_ENABLED'
 endif
 
 executable('httpserver', src, include_directories : ['src'],
-  dependencies : [threads_dep, liburingpp_dep, openssl_dep, zlib_dep])
+  cpp_args : flags,
+  dependencies : [threads_dep, liburingpp_dep, openssl_dep])
