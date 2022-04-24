@@ -210,10 +210,9 @@ private:
     {
         if (ec) {
             std::cerr << "Error in accept: " << ec.message() << std::endl;
-            return;
+        } else {
+            std::make_shared<Session>(io_, fd, handler_)->start();
         }
-
-        std::make_shared<Session>(io_, fd, handler_)->start();
 
         accept();
     }
