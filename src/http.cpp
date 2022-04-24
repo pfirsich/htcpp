@@ -6,9 +6,27 @@
 
 std::optional<Method> parseMethod(std::string_view method)
 {
+    // RFC2616, 5.1.1: "The method is case-sensitive"
     if (method == "GET") {
         return Method::Get;
+    } else if (method == "HEAD") {
+        return Method::Head;
+    } else if (method == "POST") {
+        return Method::Post;
+    } else if (method == "PUT") {
+        return Method::Put;
+    } else if (method == "DELETE") {
+        return Method::Delete;
+    } else if (method == "CONNECT") {
+        return Method::Connect;
+    } else if (method == "OPTIONS") {
+        return Method::Options;
+    } else if (method == "TRACE") {
+        return Method::Trace;
+    } else if (method == "PATCH") {
+        return Method::Patch;
     }
+
     return std::nullopt;
 }
 
@@ -156,44 +174,55 @@ std::optional<Url> Url::parse(std::string_view urlStr)
 
 std::optional<Request> Request::parse(std::string_view requestStr)
 {
-    // e.g.: GET /foobar/barbar http/1.1\r\nHost: example.org\r\n\r\n
+    // e.g.: GET /foobar/barbar HTTP/1.1\r\nHost: example.org\r\n\r\n
     Request req;
 
-    const auto requestLineEnd = requestStr.find('\n');
+    const auto requestLineEnd = requestStr.find("\r\n");
     if (requestLineEnd == std::string::npos) {
         return std::nullopt;
     }
     const auto requestLine = requestStr.substr(0, requestLineEnd);
 
-    size_t cursor = 0;
-    const auto methodDelim = requestLine.substr(cursor, 8).find(' ');
+    const auto methodDelim = requestLine.find(' ');
     if (methodDelim == std::string::npos) {
         return std::nullopt;
     }
-    const auto methodStr = requestLine.substr(cursor, methodDelim);
+    const auto methodStr = requestLine.substr(0, methodDelim);
+    // We'll allow OPTIONS in HTTP/1.0 too
     const auto method = parseMethod(methodStr);
     if (!method) {
         return std::nullopt;
     }
     req.method = *method;
-    // I could skip all whitespace here to be more robust, but RFC2616 5.1 only mentions 1 SP
-    cursor += methodDelim + 1;
 
+    // I could skip all whitespace here to be more robust, but RFC2616 5.1 only mentions 1 SP
+    const auto urlStart = methodDelim + 1;
+    if (urlStart >= requestLine.size()) {
+        return std::nullopt;
+    }
     // SHOULD actually return "414 Request-URI Too Long" here (RFC2616 3.2.1)
-    const auto urlLen = requestLine.substr(cursor, Config::get().maxUrlLength).find(' ');
+    const auto urlLen = requestLine.substr(urlStart, Config::get().maxUrlLength).find(' ');
     if (urlLen == std::string::npos) {
         return std::nullopt;
     }
-    const auto url = Url::parse(requestLine.substr(cursor, urlLen));
+    const auto url = Url::parse(requestLine.substr(urlStart, urlLen));
     if (!url) {
         return std::nullopt;
     }
     req.url = url.value();
 
-    size_t lineStart = requestStr.find("\r\n");
-    if (lineStart == std::string_view::npos) {
+    const auto versionStart = urlStart + urlLen + 1;
+    if (versionStart > requestLine.size()) {
         return std::nullopt;
     }
+    req.version = requestLine.substr(versionStart);
+
+    if (req.version.size() != 8 || req.version.substr(0, 7) != "HTTP/1."
+        || (req.version[7] != '0' && req.version[7] != '1')) {
+        return std::nullopt;
+    }
+
+    size_t lineStart = requestLineEnd + 2;
     lineStart += 2;
 
     while (lineStart < requestStr.size()) {

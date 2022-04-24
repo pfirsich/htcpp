@@ -184,6 +184,7 @@ struct Url {
 struct Request {
     Method method;
     Url url;
+    std::string_view version;
     HeaderMap<std::string_view> headers;
     std::string_view body;
 
