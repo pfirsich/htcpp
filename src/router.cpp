@@ -19,11 +19,7 @@ Response Router::operator()(const Request& request) const
     for (const auto& route : routes_) {
         const auto params = route.pattern.match(request.url.path);
         if (params) {
-            auto resp = route.handler(request, *params);
-            if (resp.body.size() > 0) {
-                resp.headers.set("Content-Length", std::to_string(resp.body.size()));
-            }
-            return resp;
+            return route.handler(request, *params);
         }
     }
     // No matching route

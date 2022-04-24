@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -127,6 +128,7 @@ public:
 
     void add(std::string_view name, std::string_view value)
     {
+        assert(!ciEqual(name, "Content-Length")); // Do not add this yourself
         headers_.emplace_back(StringType(name), StringType(value));
     }
 

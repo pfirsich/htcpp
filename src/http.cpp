@@ -306,6 +306,11 @@ std::string Response::string(std::string_view httpVersion) const
     s.append(std::to_string(static_cast<int>(code)));
     // The reason phrase may be empty, but the separator space is not optional
     s.append(" \r\n");
+    if (!body.empty()) {
+        s.append("Content-Length: ");
+        s.append(std::to_string(body.size()));
+        s.append("\r\n");
+    }
     for (const auto& [name, value] : headerEntries) {
         s.append(name);
         s.append(": ");
