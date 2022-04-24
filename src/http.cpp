@@ -267,7 +267,6 @@ Response::Response(std::string body)
     : body(std::move(body))
 {
     headers.add("Connection", "close");
-    headers.add("Content-Type", "text/plain");
 }
 
 Response::Response(std::string body, std::string_view contentType)
@@ -282,7 +281,6 @@ Response::Response(StatusCode code, std::string body)
     , body(std::move(body))
 {
     headers.add("Connection", "close");
-    headers.add("Content-Type", "text/plain");
 }
 
 Response::Response(StatusCode code, std::string body, std::string_view contentType)

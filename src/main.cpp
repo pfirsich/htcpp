@@ -11,6 +11,19 @@
 
 using namespace std::literals;
 
+static std::string getMimeType(std::string fileExt)
+{
+    static std::unordered_map<std::string, std::string> mimeTypes {
+        { "jpg", "image/jpeg" },
+        { "html", "text/html" },
+    };
+    const auto it = mimeTypes.find(fileExt);
+    if (it == mimeTypes.end()) {
+        return "text/plain";
+    }
+    return it->second;
+}
+
 int main()
 {
     std::cout << "Starting HTTP server.." << std::endl;
@@ -39,8 +52,10 @@ int main()
     router.route("/", Method::Get,
         [](const Request&, const Router::RouteParams&) -> Response { return "Hello!"s; });
 
-    router.route("/foo", Method::Get,
-        [](const Request&, const Router::RouteParams&) -> Response { return "This is foo"s; });
+    router.route("/number/:num", Method::Get,
+        [](const Request&, const Router::RouteParams& params) -> Response {
+            return "Number: "s + std::string(params.at("num"));
+        });
 
     router.route("/headers", [](const Request& req, const Router::RouteParams&) -> Response {
         std::string s;
@@ -74,11 +89,14 @@ int main()
 
     router.route("/file/:path*",
         [&fileCache](const Request&, const Router::RouteParams& params) -> Response {
-            const auto f = fileCache.get(std::string(params.at("path")));
+            const auto path = params.at("path");
+            const auto f = fileCache.get(std::string(path));
             if (!f) {
                 return Response(StatusCode::NotFound, "Not Found");
             }
-            return Response(*f, "text/plain");
+            const auto extDelim = path.find_last_of('.');
+            const auto ext = path.substr(std::min(extDelim + 1, path.size()));
+            return Response(*f, getMimeType(std::string(ext)));
         });
 
     if (config.useTls) {
