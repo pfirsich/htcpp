@@ -196,7 +196,7 @@ struct Request {
 };
 
 struct Response {
-    Response();
+    Response() = default;
 
     Response(std::string body);
 

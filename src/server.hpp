@@ -65,6 +65,7 @@ private:
             // shared_from_this must not be called until the shared_ptr constructor has completed.
             // You would get a bad_weak_ptr exception in shared_from_this if you called it from the
             // Session constructor.
+            requestBuffer_.clear();
             readRequest();
         }
 
@@ -103,30 +104,65 @@ private:
                         // Done reading
                         processRequest(requestBuffer_);
                     } else if (requestBuffer_.size() >= Config::get().maxRequestSize) {
-                        respond("HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n");
+                        respond(
+                            "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n", false);
                     } else {
                         readRequest();
                     }
                 });
         }
 
+        bool getKeepAlive(const Request& request)
+        {
+            const auto connectionHeader = request.headers.get("Connection");
+            if (connectionHeader) {
+                if (connectionHeader->find("close") != std::string_view::npos) {
+                    return false;
+                }
+                // I should check case-insensitively here, but it's always lowercase in practice
+                // (everywhere I tried)
+                if (connectionHeader->find("keep-alive") != std::string_view::npos) {
+                    return true;
+                }
+            }
+            if (request.version == "HTTP/1.1") {
+                return true;
+            }
+            return false;
+        }
+
         void processRequest(std::string_view requestStr)
         {
             auto request = Request::parse(requestStr);
             if (!request) {
-                respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+                // I hardcode this `Connection: close` here, so we disconnect clients that try to
+                // mess with us
+                respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                 return;
             }
-            respond(handler_(*request).string(request->version));
+            respond(handler_(*request).string(request->version), getKeepAlive(*request));
         }
 
-        void respond(std::string_view response)
+        void respond(std::string_view response, bool keepAlive)
         {
             connection_.send(response.data(), response.size(),
-                [this, self = this->shared_from_this()](std::error_code /*ec*/, int /*sent*/) {
-                    // We shut down either way (error or not), because we don't want to retry.
-                    // Let the client retry the whole request themselves.
-                    shutdown();
+                [this, self = this->shared_from_this(), keepAlive, size = response.size()](
+                    std::error_code ec, int sent) {
+                    if (ec) {
+                        std::cerr << "Error in send: " << ec.message() << std::endl;
+                    } else if (sent < static_cast<int>(size)) {
+                        std::cerr << "Incomplete send" << ec.message() << std::endl;
+                    }
+                    if (ec || sent < static_cast<int>(size)) {
+                        // Let the client retry the whole request.
+                        shutdown();
+                        return;
+                    }
+                    if (!keepAlive) {
+                        shutdown();
+                        return;
+                    }
+                    start();
                 });
         }
 
