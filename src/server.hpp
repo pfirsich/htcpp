@@ -117,7 +117,7 @@ private:
                 respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
                 return;
             }
-            respond(handler_(*request).string());
+            respond(handler_(*request).string(request->version));
         }
 
         void respond(std::string_view response)

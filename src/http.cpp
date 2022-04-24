@@ -293,7 +293,7 @@ Response::Response(StatusCode code, std::string body, std::string_view contentTy
     headers.add("Content-Type", contentType);
 }
 
-std::string Response::string() const
+std::string Response::string(std::string_view httpVersion) const
 {
     std::string s;
     auto size = 12 + 2; // status line
@@ -303,9 +303,11 @@ std::string Response::string() const
     }
     size += 2;
     size += body.size();
-    s.append("HTTP/1.1 ");
+    s.append(httpVersion);
+    s.append(" ");
     s.append(std::to_string(static_cast<int>(code)));
-    s.append("\r\n");
+    // The reason phrase may be empty, but the separator space is not optional
+    s.append(" \r\n");
     for (const auto& [name, value] : headerEntries) {
         s.append(name);
         s.append(": ");

@@ -204,7 +204,7 @@ struct Response {
 
     Response(StatusCode code, std::string body, std::string_view contentType);
 
-    std::string string() const;
+    std::string string(std::string_view httpVersion) const;
 
     StatusCode code = StatusCode::Ok;
     HeaderMap<std::string> headers;
