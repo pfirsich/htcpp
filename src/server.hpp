@@ -140,22 +140,19 @@ private:
                 respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                 return;
             }
-            // Passing a local variable to respond here *barely* works, because we io_uring_enter
-            // as part of the connection_.send call in the TCP case, which ends up copying the
-            // buffer to kernel space.
-            // In the TLS case SSL_write should copy the whole buffer into the BIO if there is
-            // enough space (17K), which should be the case most of the time.
-            // This will likely break very, very soon, but I want to wait until it does.
-            // If (when?) it does, introduce a responseBuffer_ member variable and assign to that
-            // instead.
-            const auto responseStr = handler_(*request).string(request->version);
-            respond(responseStr, getKeepAlive(*request));
+            respond(handler_(*request).string(request->version), getKeepAlive(*request));
         }
 
-        void respond(std::string_view response, bool keepAlive)
+        void respond(std::string response, bool keepAlive)
         {
-            connection_.send(response.data(), response.size(),
-                [this, self = this->shared_from_this(), keepAlive, size = response.size()](
+            // We need to keep the memory that is referenced in the SQE around, because we don't
+            // know when the kernel will copy it, so we save it in this member variable, which
+            // definitely lives longer than this send takes to complete.
+            // I also prefer the member variable compared to moving it into the lambda, because
+            // it can be reused for another request in this session.
+            responseBuffer_ = std::move(response);
+            connection_.send(responseBuffer_.data(), responseBuffer_.size(),
+                [this, self = this->shared_from_this(), keepAlive, size = responseBuffer_.size()](
                     std::error_code ec, int sent) {
                     if (ec) {
                         std::cerr << "Error in send: " << ec.message() << std::endl;
@@ -184,6 +181,7 @@ private:
         Connection connection_;
         std::function<Response(const Request&)>& handler_;
         std::string requestBuffer_;
+        std::string responseBuffer_;
     };
 
     void accept()
