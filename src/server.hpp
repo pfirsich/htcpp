@@ -140,7 +140,16 @@ private:
                 respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                 return;
             }
-            respond(handler_(*request).string(request->version), getKeepAlive(*request));
+            // Passing a local variable to respond here *barely* works, because we io_uring_enter
+            // as part of the connection_.send call in the TCP case, which ends up copying the
+            // buffer to kernel space.
+            // In the TLS case SSL_write should copy the whole buffer into the BIO if there is
+            // enough space (17K), which should be the case most of the time.
+            // This will likely break very, very soon, but I want to wait until it does.
+            // If (when?) it does, introduce a responseBuffer_ member variable and assign to that
+            // instead.
+            const auto responseStr = handler_(*request).string(request->version);
+            respond(responseStr, getKeepAlive(*request));
         }
 
         void respond(std::string_view response, bool keepAlive)

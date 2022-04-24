@@ -189,7 +189,9 @@ SslConnection::SslConnection(IoQueue& io, int fd)
         std::cerr << "Could not create SSL object: " << getSslErrorString() << std::endl;
         return;
     }
-    SSL_set_fd(ssl_, fd_);
+
+    // I think there is no reason not to have this? It should save memory.
+    SSL_set_mode(ssl_, SSL_MODE_RELEASE_BUFFERS);
 
     BIO* internalBio = nullptr;
     BIO_new_bio_pair(&internalBio, 0, &externalBio_, 0);
@@ -202,8 +204,9 @@ SslConnection::SslConnection(IoQueue& io, int fd)
 
     // https://www.openssl.org/docs/man1.1.1/man3/SSL_read.html
     // 16K is maximum TLS record size
-    recvBuffer_.resize(16 * 1024, 0);
-    sendBuffer_.resize(16 * 1024, 0);
+    // but 17*1024 is default BIO size.
+    recvBuffer_.resize(17 * 1024, 0);
+    sendBuffer_.resize(17 * 1024, 0);
 
     /*
      * We don't have to do the handshake here manually:
