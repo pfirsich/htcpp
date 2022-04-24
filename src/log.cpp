@@ -44,6 +44,7 @@ Severity& detail::getCurrentLogLevel()
     static Severity severity = Severity::Info;
     return severity;
 }
+
 std::string detail::getDateTimeStr()
 {
     const auto t = std::time(nullptr);

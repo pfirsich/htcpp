@@ -6,7 +6,6 @@
 
 #include "config.hpp"
 #include "fd.hpp"
-#include "http.hpp"
 #include "ioqueue.hpp"
 #include "log.hpp"
 
@@ -30,11 +29,10 @@ protected:
 template <typename Connection>
 class Server {
 public:
-    Server(IoQueue& io, std::function<Response(const Request&)> handler)
+    Server(IoQueue& io)
         : io_(io)
         , listenSocket_(createTcpListenSocket(
               Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
-        , handler_(std::move(handler))
     {
         if (listenSocket_ == -1) {
             std::cerr << "Could not create listen socket: " << errnoToString(errno) << std::endl;
@@ -53,16 +51,15 @@ private:
     // destroyed
     class Session : public std::enable_shared_from_this<Session> {
     public:
-        Session(IoQueue& io, int fd, std::function<Response(const Request&)>& handler)
+        Session(IoQueue& io, int fd)
             : connection_(io, fd)
-            , handler_(handler)
         {
-            rlog::debug("start session");
             requestBuffer_.reserve(Config::get().defaultRequestSize);
         }
 
         void start()
         {
+            rlog::debug("start session ", this);
             // readRequests is not part of the constructor and in this separate method, because
             // shared_from_this must not be called until the shared_ptr constructor has completed.
             // You would get a bad_weak_ptr exception in shared_from_this if you called it from the
@@ -103,61 +100,21 @@ private:
                     }
 
                     if (readBytes == 0 || static_cast<size_t>(readBytes) < readAmount) {
-                        // Done reading
-                        processRequest(requestBuffer_);
+                        // All hard coded for ab (HTTP/1.0 without Connection: keep-alive)
+                        respond("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
                     } else if (requestBuffer_.size() >= Config::get().maxRequestSize) {
-                        respond(
-                            "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n", false);
+                        respond("HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n");
                     } else {
                         readRequest();
                     }
                 });
         }
 
-        bool getKeepAlive(const Request& request)
+        void respond(std::string responseStr)
         {
-            const auto connectionHeader = request.headers.get("Connection");
-            if (connectionHeader) {
-                if (connectionHeader->find("close") != std::string_view::npos) {
-                    return false;
-                }
-                // I should check case-insensitively here, but it's always lowercase in practice
-                // (everywhere I tried)
-                if (connectionHeader->find("keep-alive") != std::string_view::npos) {
-                    return true;
-                }
-            }
-            if (request.version == "HTTP/1.1") {
-                return true;
-            }
-            return false;
-        }
-
-        void processRequest(std::string_view requestStr)
-        {
-            auto request = Request::parse(requestStr);
-            if (!request) {
-                // I hardcode this `Connection: close` here, so we disconnect clients that try to
-                // mess with us
-                respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
-                return;
-            }
-            // Passing a local variable to respond here *barely* works, because we io_uring_enter
-            // as part of the connection_.send call in the TCP case, which ends up copying the
-            // buffer to kernel space.
-            // In the TLS case SSL_write should copy the whole buffer into the BIO if there is
-            // enough space (17K), which should be the case most of the time.
-            // This will likely break very, very soon, but I want to wait until it does.
-            // If (when?) it does, introduce a responseBuffer_ member variable and assign to that
-            // instead.
-            const auto responseStr = handler_(*request).string(request->version);
-            respond(responseStr, getKeepAlive(*request));
-        }
-
-        void respond(std::string_view response, bool keepAlive)
-        {
-            connection_.send(response.data(), response.size(),
-                [this, self = this->shared_from_this(), keepAlive, size = response.size()](
+            responseBuffer_ = std::move(responseStr);
+            connection_.send(responseBuffer_.data(), responseBuffer_.size(),
+                [this, self = this->shared_from_this(), size = responseBuffer_.size()](
                     std::error_code ec, int sent) {
                     if (ec) {
                         std::cerr << "Error in send: " << ec.message() << std::endl;
@@ -165,13 +122,7 @@ private:
                         // When does this happen?
                         std::cerr << "Incomplete send: " << ec.message() << std::endl;
                     }
-                    if (ec || sent < static_cast<int>(size) || !keepAlive) {
-                        // If something went wrong (error or incomplete) let the client
-                        // retry the whole request.
-                        shutdown();
-                        return;
-                    }
-                    start();
+                    shutdown();
                 });
         }
 
@@ -184,8 +135,8 @@ private:
         }
 
         Connection connection_;
-        std::function<Response(const Request&)>& handler_;
         std::string requestBuffer_;
+        std::string responseBuffer_;
     };
 
     void accept()
@@ -215,12 +166,11 @@ private:
             return;
         }
 
-        std::make_shared<Session>(io_, fd, handler_)->start();
+        std::make_shared<Session>(io_, fd)->start();
 
         accept();
     }
 
     IoQueue& io_;
     Fd listenSocket_;
-    std::function<Response(const Request&)> handler_;
 };

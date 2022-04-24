@@ -3,11 +3,6 @@
 #include <netinet/in.h>
 
 struct Config {
-#ifdef TLS_SUPPORT_ENABLED
-    bool useTls = false;
-#else
-    bool useTls = false;
-#endif
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
     size_t listenBacklog = SOMAXCONN;

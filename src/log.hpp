@@ -53,28 +53,4 @@ void debug(Args&&... args)
 {
     detail::log(Severity::Debug, "DEBUG", std::forward<Args>(args)...);
 }
-
-template <typename... Args>
-void info(Args&&... args)
-{
-    detail::log(Severity::Info, "INFO", std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void warning(Args&&... args)
-{
-    detail::log(Severity::Warning, "WARNING", std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void error(Args&&... args)
-{
-    detail::log(Severity::Error, "ERROR", std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void fatal(Args&&... args)
-{
-    detail::log(Severity::Fatal, "FATAL", std::forward<Args>(args)...);
-}
 }

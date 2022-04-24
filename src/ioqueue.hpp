@@ -22,10 +22,6 @@ public:
 
     IoQueue(size_t size = 1024);
 
-    size_t getSize() const;
-
-    size_t getCapacity() const;
-
     // res argument is sent bytes
     bool write(int fd, const void* buf, size_t len, HandlerEcRes cb);
 
@@ -43,8 +39,6 @@ public:
     bool close(int fd, HandlerEc cb);
 
     bool shutdown(int fd, int how, HandlerEc cb);
-
-    bool poll(int fd, short events, HandlerEcRes cb);
 
     void run();
 

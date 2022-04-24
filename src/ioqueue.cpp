@@ -14,16 +14,6 @@ IoQueue::IoQueue(size_t size)
     }
 }
 
-size_t IoQueue::getSize() const
-{
-    return ring_.getNumSqeEntries();
-}
-
-size_t IoQueue::getCapacity() const
-{
-    return ring_.getSqeCapacity();
-}
-
 bool IoQueue::write(int fd, const void* buf, size_t len, HandlerEcRes cb)
 {
     // printf("queue buf: %p, size: %lu\n", buf, len);
@@ -60,11 +50,6 @@ bool IoQueue::close(int fd, HandlerEc cb)
 bool IoQueue::shutdown(int fd, int how, HandlerEc cb)
 {
     return addSqe(ring_.prepareShutdown(fd, how), std::move(cb));
-}
-
-bool IoQueue::poll(int fd, short events, HandlerEcRes cb)
-{
-    return addSqe(ring_.preparePollAdd(fd, events), std::move(cb));
 }
 
 void IoQueue::run()
