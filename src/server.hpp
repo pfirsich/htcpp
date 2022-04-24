@@ -151,14 +151,12 @@ private:
                     if (ec) {
                         std::cerr << "Error in send: " << ec.message() << std::endl;
                     } else if (sent < static_cast<int>(size)) {
-                        std::cerr << "Incomplete send" << ec.message() << std::endl;
+                        // When does this happen?
+                        std::cerr << "Incomplete send: " << ec.message() << std::endl;
                     }
-                    if (ec || sent < static_cast<int>(size)) {
-                        // Let the client retry the whole request.
-                        shutdown();
-                        return;
-                    }
-                    if (!keepAlive) {
+                    if (ec || sent < static_cast<int>(size) || !keepAlive) {
+                        // If something went wrong (error or incomplete) let the client
+                        // retry the whole request.
                         shutdown();
                         return;
                     }
