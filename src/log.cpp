@@ -44,13 +44,4 @@ Severity& detail::getCurrentLogLevel()
     static Severity severity = Severity::Info;
     return severity;
 }
-
-std::string detail::getDateTimeStr()
-{
-    const auto t = std::time(nullptr);
-    char buf[32];
-    const auto n = std::strftime(buf, sizeof(buf), "%F %T", std::localtime(&t));
-    assert(n > 0);
-    return std::string(buf, n);
-}
 }

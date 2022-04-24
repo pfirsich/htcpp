@@ -32,8 +32,6 @@ namespace detail {
 
     Severity& getCurrentLogLevel();
 
-    std::string getDateTimeStr();
-
     template <typename... Args>
     void log(Severity severity, std::string_view severityStr, Args&&... args)
     {
@@ -42,7 +40,11 @@ namespace detail {
         if (static_cast<int>(severity) < static_cast<int>(getCurrentLogLevel())) {
             return;
         }
-        (os << "[" << detail::getDateTimeStr() << "]"
+        // The length of the *X string controls how quickly after starting the load test the system
+        // locks up (longer -> quicker).
+        (os << "["
+            << "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            << "]"
             << " [" << severityStr << "] " << ... << args)
             << "\n";
     }
