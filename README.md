@@ -24,7 +24,7 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 
 ## Todo
 * Find a name
-* Nicer logging (with configurable log levels and access log)
+* (maybe) Access Log
 * Reload certificates and recreate certificates if they are renewed
 * certbot integration
 * Docker image (optionally including certbot)

@@ -1,16 +1,17 @@
 #include "filewatcher.hpp"
 
-#include <iostream>
-
 #include <sys/poll.h>
 #include <unistd.h>
+
+#include "log.hpp"
+#include "util.hpp"
 
 FileWatcher::FileWatcher(IoQueue& io)
     : io_(io)
     , inotifyFd_(::inotify_init())
 {
     if (inotifyFd_ < 0) {
-        std::perror("inotify_init");
+        slog::fatal("inotify_init failed: ", errnoToString(errno));
         std::exit(1);
     }
 
@@ -34,8 +35,7 @@ bool FileWatcher::watch(std::string_view path, std::function<void(std::string_vi
     if (it == dirWatches_.end()) {
         const auto wd = ::inotify_add_watch(inotifyFd_, dirPath.c_str(), IN_CLOSE_WRITE);
         if (wd < 0) {
-            std::cerr << "Could not watch directory: " << dirPath << std::endl;
-            std::perror("inotify_add_watch");
+            slog::error("Could not watch directory '", dirPath, "': ", errnoToString(errno));
             return false;
         }
         it = dirWatches_.emplace(dirPath, DirWatch { dirPath, wd }).first;
@@ -44,7 +44,7 @@ bool FileWatcher::watch(std::string_view path, std::function<void(std::string_vi
     const auto filename = lastSep == std::string_view::npos ? std::string(path)
                                                             : std::string(path.substr(lastSep + 1));
     if (dirWatch.fileWatches.count(filename)) {
-        std::cerr << "Already watching " << path << std::endl;
+        slog::error("Already watching ", path);
         return false;
     }
     dirWatch.fileWatches.emplace(
@@ -61,7 +61,7 @@ void FileWatcher::pollInotify()
 void FileWatcher::onInotifyReadable(std::error_code ec, int /*revents*/)
 {
     if (ec) {
-        std::cerr << "Error polling inotify fd: " << ec.message() << std::endl;
+        slog::error("Error polling inotify fd: ", ec.message());
         pollInotify();
         return;
     }
@@ -72,7 +72,7 @@ void FileWatcher::onInotifyReadable(std::error_code ec, int /*revents*/)
 
     const auto len = ::read(inotifyFd_, eventBuffer, eventBufLen);
     if (len < 0 && errno != EAGAIN) {
-        std::perror("read");
+        slog::error("Error reading inotify notifications: ", errnoToString(errno));
     }
 
     long i = 0;
@@ -86,11 +86,11 @@ void FileWatcher::onInotifyReadable(std::error_code ec, int /*revents*/)
 
         if (event->mask & IN_IGNORED) {
             // rewatch
-            std::cout << "Rewatch " << dirWatch.path << std::endl;
+            slog::debug("Rewatch '", dirWatch.path, "'");
             dirWatch.wd = ::inotify_add_watch(inotifyFd_, dirWatch.path.c_str(), IN_CLOSE_WRITE);
             if (dirWatch.wd < 0) {
-                std::cerr << "Could not rewatch directory: " << dirWatch.path << std::endl;
-                std::perror("inotify_add_watch");
+                slog::error(
+                    "Could not rewatch directory '", dirWatch.path, "': ", errnoToString(errno));
             }
         } else if (event->len > 0) {
             assert(event->mask & IN_CLOSE_WRITE);

@@ -3,8 +3,10 @@
 #include "filecache.hpp"
 #include "http.hpp"
 #include "ioqueue.hpp"
+#include "log.hpp"
 #include "router.hpp"
 #include "server.hpp"
+
 #ifdef TLS_SUPPORT_ENABLED
 #include "ssl.hpp"
 #endif
@@ -26,24 +28,19 @@ static std::string getMimeType(std::string fileExt)
 
 int main()
 {
-    std::cout << "Starting HTTP server.." << std::endl;
-    const auto& config = Config::get();
-    std::cout << "useTls: " << config.useTls << std::endl;
-    std::cout << "listenPort: " << config.listenPort << std::endl;
-    std::cout << "listenBacklog: " << config.listenBacklog << std::endl;
-    std::cout << "ioQueueSize: " << config.ioQueueSize << std::endl;
-    std::cout << "readAmount: " << config.readAmount << std::endl;
-    std::cout << "singleReadTimeoutMs: " << config.singleReadTimeoutMs << std::endl;
-    std::cout << "fullReadTimeoutMs: " << config.fullReadTimeoutMs << std::endl;
-    std::cout << "maxUrlLength: " << config.maxUrlLength << std::endl;
-    std::cout << "maxRequestSize: " << config.maxRequestSize << std::endl;
-    std::cout << "defaultRequestSize: " << config.defaultRequestSize << std::endl;
+    slog::init();
 
-#ifdef TLS_SUPPORT_ENABLED
-    if (!SslContextManager::instance().init("cert.pem", "key.pem")) {
-        return 1;
-    }
-#endif
+    const auto& config = Config::get();
+    slog::info("useTls: ", config.useTls);
+    slog::info("listenPort: ", config.listenPort);
+    slog::info("listenBacklog: ", config.listenBacklog);
+    slog::info("ioQueueSize: ", config.ioQueueSize);
+    slog::info("readAmount: ", config.readAmount);
+    slog::info("singleReadTimeoutMs: ", config.singleReadTimeoutMs);
+    slog::info("fullReadTimeoutMs: ", config.fullReadTimeoutMs);
+    slog::info("maxUrlLength: ", config.maxUrlLength);
+    slog::info("maxRequestSize: ", config.maxRequestSize);
+    slog::info("defaultRequestSize: ", config.defaultRequestSize);
 
     IoQueue io(config.ioQueueSize);
 
@@ -103,10 +100,14 @@ int main()
 
     if (config.useTls) {
 #ifdef TLS_SUPPORT_ENABLED
+        if (!SslContextManager::instance().init("cert.pem", "key.pem")) {
+            return 1;
+        }
+
         Server<SslConnection> server(io, router);
         server.start();
 #else
-        std::cerr << "Not compiled with TLS support" << std::endl;
+        slog::fatal("Not compiled with TLS support");
         return 1;
 #endif
     } else {

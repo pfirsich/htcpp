@@ -1,7 +1,8 @@
 #include "filecache.hpp"
 
-#include <iostream>
 #include <memory>
+
+#include "log.hpp"
 
 FileCache::FileCache(IoQueue& io)
     : io_(io)
@@ -19,7 +20,7 @@ const std::string* FileCache::get(const std::string& path)
     if (it == files_.end()) {
         it = files_.emplace(path, File { path }).first;
         fileWatcher_.watch(path, [this](std::string_view path) {
-            std::cout << "file changed: " << path << std::endl;
+            slog::info("file changed: '", path, "'");
             files_.at(std::string(path)).dirty = true;
         });
     }
@@ -39,25 +40,25 @@ std::optional<std::string> FileCache::readFile(const std::string& path)
     auto f = std::unique_ptr<FILE, decltype(&std::fclose)>(
         std::fopen(path.c_str(), "rb"), &std::fclose);
     if (!f) {
-        std::cerr << "Could not open file '" << path << "'" << std::endl;
+        slog::error("Could not open file: '", path, "'");
         return std::nullopt;
     }
     if (std::fseek(f.get(), 0, SEEK_END) != 0) {
-        std::cerr << "Error seeking to end of '" << path << "'" << std::endl;
+        slog::error("Error seeking to end of file: '", path, "'");
         return std::nullopt;
     }
     const auto size = std::ftell(f.get());
     if (size < 0) {
-        std::cerr << "Error getting size of '" << path << "'" << std::endl;
+        slog::error("Error getting size of file: '", path, "'");
         return std::nullopt;
     }
     if (std::fseek(f.get(), 0, SEEK_SET) != 0) {
-        std::cerr << "Error seeking to start of '" << path << "'" << std::endl;
+        slog::error("Error seeking to start of file: '", path, "'");
         return std::nullopt;
     }
     std::string buf(size, '\0');
     if (std::fread(buf.data(), 1, size, f.get()) != static_cast<size_t>(size)) {
-        std::cerr << "Error reading file '" << path << "'" << std::endl;
+        slog::error("Error reading file: '", path, "'");
         return std::nullopt;
     }
     return buf;
@@ -65,7 +66,7 @@ std::optional<std::string> FileCache::readFile(const std::string& path)
 
 void FileCache::File::reload()
 {
-    std::cout << "reload " << path << std::endl;
+    slog::info("reload file: '", path, "'");
     const auto cont = readFile(path);
     if (cont) {
         contents = *cont;

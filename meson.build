@@ -13,10 +13,12 @@ src = [
   'src/filewatcher.cpp',
   'src/http.cpp',
   'src/ioqueue.cpp',
+  'src/log.cpp',
   'src/main.cpp',
   'src/router.cpp',
   'src/server.cpp',
   'src/string.cpp',
+  'src/util.cpp',
 ]
 
 if openssl_dep.found()

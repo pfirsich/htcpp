@@ -8,9 +8,10 @@
 #include "fd.hpp"
 #include "http.hpp"
 #include "ioqueue.hpp"
+#include "log.hpp"
+#include "util.hpp"
 
 Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024);
-std::string errnoToString(int err);
 
 class TcpConnection {
 public:
@@ -39,7 +40,7 @@ public:
         , handler_(std::move(handler))
     {
         if (listenSocket_ == -1) {
-            std::cerr << "Could not create listen socket: " << errnoToString(errno) << std::endl;
+            slog::fatal("Could not create listen socket: ", errnoToString(errno));
             std::exit(1);
         }
     };
@@ -94,7 +95,7 @@ private:
                 [this, self = this->shared_from_this(), readAmount](
                     std::error_code ec, int readBytes) {
                     if (ec) {
-                        std::cerr << "Error in recv: " << ec.message() << std::endl;
+                        slog::error("Error in recv: ", ec.message());
                         shutdown();
                         return;
                     }
@@ -158,10 +159,10 @@ private:
                 [this, self = this->shared_from_this(), keepAlive, size = responseBuffer_.size()](
                     std::error_code ec, int sent) {
                     if (ec) {
-                        std::cerr << "Error in send: " << ec.message() << std::endl;
+                        slog::error("Error in send: ", ec.message());
                     } else if (sent < static_cast<int>(size)) {
                         // When does this happen?
-                        std::cerr << "Incomplete send: " << ec.message() << std::endl;
+                        slog::error("Incomplete send: ", ec.message());
                     }
                     if (ec || sent < static_cast<int>(size) || !keepAlive) {
                         // If something went wrong (error or incomplete) let the client
@@ -210,7 +211,7 @@ private:
     void handleAccept(std::error_code ec, int fd)
     {
         if (ec) {
-            std::cerr << "Error in accept: " << ec.message() << std::endl;
+            slog::error("Error in accept: ", ec.message());
         } else {
             std::make_shared<Session>(io_, fd, handler_)->start();
         }

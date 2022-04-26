@@ -49,24 +49,19 @@ Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int backlog)
 
     const int reuse = 1;
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
-        std::cerr << "Could not set sockopt SO_REUSEADDR" << std::endl;
+        slog::error("Could not set sockopt SO_REUSEADDR");
         return Fd {};
     }
 
     if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) == -1) {
-        std::cerr << "Could not bind to port " << listenPort << std::endl;
+        slog::error("Could not bind to port ", listenPort);
         return Fd {};
     }
 
     if (::listen(fd, backlog) == -1) {
-        std::cerr << "Could not listen on socket" << std::endl;
+        slog::error("Could not listen on socket");
         return Fd {};
     }
 
     return fd;
-}
-
-std::string errnoToString(int err)
-{
-    return std::make_error_code(static_cast<std::errc>(err)).message();
 }

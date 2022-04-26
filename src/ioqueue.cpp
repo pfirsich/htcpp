@@ -1,15 +1,17 @@
 #include "ioqueue.hpp"
 
+#include "log.hpp"
+
 IoQueue::IoQueue(size_t size)
     : completionHandlers_(size)
 {
     ring_.init(size);
     if (!(ring_.getParams().features & IORING_FEAT_NODROP)) {
-        std::cerr << "io_uring does not support NODROP" << std::endl;
+        slog::fatal("io_uring does not support NODROP");
         std::exit(1);
     }
     if (!(ring_.getParams().features & IORING_FEAT_SUBMIT_STABLE)) {
-        std::cerr << "io_uring does not support SUBMIT_STABLE" << std::endl;
+        slog::fatal("io_uring does not support SUBMIT_STABLE");
         std::exit(1);
     }
 }
@@ -73,8 +75,6 @@ void IoQueue::run()
             ch(cqe);
             completionHandlers_.remove(cqe->user_data);
             ring_.advanceCq();
-        } else {
-            std::cout << "ignored" << std::endl;
         }
     }
 }
@@ -105,7 +105,7 @@ template <typename Callback>
 bool IoQueue::addSqe(io_uring_sqe* sqe, Callback cb)
 {
     if (!sqe) {
-        std::cerr << "io_uring full" << std::endl;
+        slog::warning("io_uring full");
         return false;
     }
     sqe->user_data = addHandler(std::move(cb));
@@ -120,7 +120,7 @@ template <typename Callback>
 bool IoQueue::addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback cb)
 {
     if (!sqe) {
-        std::cerr << "io_uring full" << std::endl;
+        slog::warning("io_uring full");
         return false;
     }
     sqe->user_data = addHandler(std::move(cb));

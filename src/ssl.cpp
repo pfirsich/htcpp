@@ -1,10 +1,11 @@
 #include "ssl.hpp"
 
 #include <cassert>
-#include <iostream>
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
+
+#include "log.hpp"
 
 std::string getSslErrorString()
 {
@@ -64,11 +65,11 @@ SslContext::SslContext()
     : ctx_(SSL_CTX_new(TLS_server_method()))
 {
     if (!ctx_) {
-        std::cerr << "Could not create SSL context: " << getSslErrorString() << std::endl;
+        slog::error("Could not create SSL context: ", getSslErrorString());
         return;
     }
     if (SSL_CTX_set_min_proto_version(ctx_, TLS1_VERSION) != 1) {
-        std::cerr << "Could not set minimum protocol version: " << getSslErrorString() << std::endl;
+        slog::error("Could not set minimum protocol version: ", getSslErrorString());
     }
 }
 
@@ -79,21 +80,20 @@ SslContext::~SslContext()
 
 bool SslContext::init(const std::string& certChainPath, const std::string& keyPath)
 {
-    std::cout << "Loading certificates from " << certChainPath << std::endl;
+    slog::info("Loading certificates from '", certChainPath, "'");
     assert(ctx_);
     if (SSL_CTX_use_certificate_chain_file(ctx_, certChainPath.c_str()) != 1) {
-        std::cerr << "Could not load certificate chain file: " << getSslErrorString() << std::endl;
+        slog::error("Could not load certificate chain file: ", getSslErrorString());
         return false;
     }
 
     if (SSL_CTX_use_PrivateKey_file(ctx_, keyPath.c_str(), SSL_FILETYPE_PEM) != 1) {
-        std::cerr << "Could not load private key file: " << getSslErrorString() << std::endl;
+        slog::error("Could not load private key file: ", getSslErrorString());
         return false;
     }
 
     if (SSL_CTX_check_private_key(ctx_) != 1) {
-        std::cerr << "Certificate and private key do not match: " << getSslErrorString()
-                  << std::endl;
+        slog::error("Certificate and private key do not match: ", getSslErrorString());
         return false;
     }
     return true;
@@ -186,7 +186,7 @@ SslConnection::SslConnection(IoQueue& io, int fd)
     , ssl_(SSL_new(*SslContextManager::instance().getCurrentContext()))
 {
     if (!ssl_) {
-        std::cerr << "Could not create SSL object: " << getSslErrorString() << std::endl;
+        slog::error("Could not create SSL object: ", getSslErrorString());
         return;
     }
 
@@ -273,7 +273,7 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
             [this, buffer, length, handler = std::move(handler), readFromBio](
                 std::error_code ec, int sentBytes) {
                 if (ec) {
-                    std::cerr << "Error in send: " << ec.message() << std::endl;
+                    slog::error("Error in send: ", ec.message());
                     // Because a read error would result in a SSL_ERROR_SYSCALL if OpenSSL did
                     // the syscalls itself, we also do not call SSL_shutdown, don't bubble up
                     // the error (which would result in SSL_shutdown also) and simply close the
@@ -289,7 +289,7 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
             [this, buffer, length, handler = std::move(handler)](
                 std::error_code ec, int readBytes) {
                 if (ec) {
-                    std::cerr << "Error in recv: " << ec.message() << std::endl;
+                    slog::error("Error in recv: ", ec.message());
                     // See branch for SSL_ERROR_WANT_WRITE
                     tcpShutdown(std::move(handler));
                     return;
@@ -303,12 +303,12 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
         // "non-recoverable fatal error"
         // "no further I/O operations should be performed on the connection and SSL_shutdown
         // must not be called"
-        std::cerr << "SSL Error " << sslErrorToString(sslError) << " in " << toString(Op) << ": "
-                  << getSslErrorString() << std::endl;
+        slog::error("SSL Error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
+            getSslErrorString());
         tcpShutdown(std::move(handler));
     } else {
-        std::cerr << "Unexpected SSL error " << sslErrorToString(sslError) << " in " << toString(Op)
-                  << ": " << getSslErrorString() << std::endl;
+        slog::error("Unexpected SSL error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
+            getSslErrorString());
         tcpShutdown(std::move(handler));
     }
 
