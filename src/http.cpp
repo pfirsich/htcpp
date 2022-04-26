@@ -269,14 +269,14 @@ Response::Response(std::string body, std::string_view contentType)
     headers.add("Content-Type", contentType);
 }
 
-Response::Response(StatusCode code, std::string body)
-    : code(code)
+Response::Response(StatusCode status, std::string body)
+    : status(status)
     , body(std::move(body))
 {
 }
 
-Response::Response(StatusCode code, std::string body, std::string_view contentType)
-    : code(code)
+Response::Response(StatusCode status, std::string body, std::string_view contentType)
+    : status(status)
     , body(std::move(body))
 {
     headers.add("Content-Type", contentType);
@@ -294,7 +294,7 @@ std::string Response::string(std::string_view httpVersion) const
     size += body.size();
     s.append(httpVersion);
     s.append(" ");
-    s.append(std::to_string(static_cast<int>(code)));
+    s.append(std::to_string(static_cast<int>(status)));
     // The reason phrase may be empty, but the separator space is not optional
     s.append(" \r\n");
     if (!body.empty()) {

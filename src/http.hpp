@@ -9,15 +9,15 @@
 #include "string.hpp"
 
 enum class Method {
-    Get = 1,
-    Head = 2,
-    Post = 4,
-    Put = 8,
-    Delete = 16,
-    Connect = 32,
-    Options = 64,
-    Trace = 128,
-    Patch = 256,
+    Get,
+    Head,
+    Post,
+    Put,
+    Delete,
+    Connect,
+    Options,
+    Trace,
+    Patch,
 };
 
 std::optional<Method> parseMethod(std::string_view method);
@@ -202,13 +202,13 @@ struct Response {
 
     Response(std::string body, std::string_view contentType);
 
-    Response(StatusCode code, std::string body);
+    Response(StatusCode status, std::string body);
 
-    Response(StatusCode code, std::string body, std::string_view contentType);
+    Response(StatusCode status, std::string body, std::string_view contentType);
 
     std::string string(std::string_view httpVersion) const;
 
-    StatusCode code = StatusCode::Ok;
+    StatusCode status = StatusCode::Ok;
     HeaderMap<std::string> headers;
     std::string body = {};
 };
