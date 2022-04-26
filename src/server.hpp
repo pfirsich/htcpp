@@ -26,6 +26,9 @@ protected:
     int fd_;
 };
 
+// Maybe I should put the function definitions into server.cpp and instantiate the template
+// explicitly for TcpConnection and SslConnection, but I would have to do that in server.cpp
+// (meaning I would have to include ssl.hpp), which I don't really like right now.
 template <typename Connection>
 class Server {
 public:

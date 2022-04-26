@@ -50,34 +50,10 @@ private:
     size_t addHandler(HandlerEcRes&& cb);
 
     template <typename Callback>
-    bool addSqe(io_uring_sqe* sqe, Callback&& cb)
-    {
-        if (!sqe) {
-            std::cerr << "io_uring full" << std::endl;
-            return false;
-        }
-        sqe->user_data = addHandler(std::move(cb));
-        ring_.submitSqes();
-        return true;
-    }
+    bool addSqe(io_uring_sqe* sqe, Callback cb);
 
     template <typename Callback>
-    bool addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback&& cb)
-    {
-        if (!sqe) {
-            std::cerr << "io_uring full" << std::endl;
-            return false;
-        }
-        sqe->user_data = addHandler(std::move(cb));
-        sqe->flags |= IOSQE_IO_LINK;
-        __kernel_timespec ts;
-        ts.tv_sec = timeoutMs / 1000;
-        ts.tv_nsec = (timeoutMs % 1000) * 1000 * 1000;
-        auto timeoutSqe = ring_.prepareLinkTimeout(&ts);
-        timeoutSqe->user_data = Ignore;
-        ring_.submitSqes();
-        return true;
-    }
+    bool addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback cb);
 
     IoURing ring_;
     SlotMap<CompletionHandler> completionHandlers_;
