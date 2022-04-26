@@ -1,3 +1,7 @@
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include "config.hpp"
 #include "fd.hpp"
 #include "filecache.hpp"
@@ -28,19 +32,22 @@ static std::string getMimeType(std::string fileExt)
 
 int main()
 {
-    slog::init();
-
     const auto& config = Config::get();
-    slog::info("useTls: ", config.useTls);
-    slog::info("listenPort: ", config.listenPort);
-    slog::info("listenBacklog: ", config.listenBacklog);
-    slog::info("ioQueueSize: ", config.ioQueueSize);
-    slog::info("readAmount: ", config.readAmount);
-    slog::info("singleReadTimeoutMs: ", config.singleReadTimeoutMs);
-    slog::info("fullReadTimeoutMs: ", config.fullReadTimeoutMs);
-    slog::info("maxUrlLength: ", config.maxUrlLength);
-    slog::info("maxRequestSize: ", config.maxRequestSize);
-    slog::info("defaultRequestSize: ", config.defaultRequestSize);
+    slog::init(config.debugLogging ? slog::Severity::Debug : slog::Severity::Info);
+    slog::info("Use TLS: ", config.useTls);
+    slog::info("Listen Port: ", config.listenPort);
+    slog::info("Listen Address: ", ::inet_ntoa(::in_addr { config.listenAddress }));
+    slog::info("Access Log: ", config.accesLog);
+    slog::info("Debug Logging: ", config.debugLogging);
+
+    slog::debug("Listen Backlog: ", config.listenBacklog);
+    slog::debug("IO Queue Size: ", config.ioQueueSize);
+    slog::debug("Read Amount: ", config.readAmount);
+    slog::debug("Single Read Timeout (ms): ", config.singleReadTimeoutMs);
+    slog::debug("Full Read Timeout (ms): ", config.fullReadTimeoutMs);
+    slog::debug("Max URL Length: ", config.maxUrlLength);
+    slog::debug("Max Request Size: ", config.maxRequestSize);
+    slog::debug("Default Request Size: ", config.defaultRequestSize);
 
     IoQueue io(config.ioQueueSize);
 

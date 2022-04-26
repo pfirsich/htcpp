@@ -44,7 +44,7 @@ Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int backlog)
     sockaddr_in addr;
     ::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(listenAddr);
+    addr.sin_addr.s_addr = listenAddr;
     addr.sin_port = htons(listenPort);
 
     const int reuse = 1;

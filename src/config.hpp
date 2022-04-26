@@ -3,13 +3,12 @@
 #include <netinet/in.h>
 
 struct Config {
-#ifdef TLS_SUPPORT_ENABLED
-    bool useTls = true;
-#else
     bool useTls = false;
-#endif
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
+    bool accesLog = true;
+    bool debugLogging = true;
+
     size_t listenBacklog = SOMAXCONN;
     size_t ioQueueSize = 2048; // power of two, >= 1, <= 4096
     size_t readAmount = 1024; // Enough for most requests, mostly less than MTU
