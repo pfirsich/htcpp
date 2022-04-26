@@ -36,7 +36,6 @@ namespace {
             const auto line = queue.consume();
             if (!line) {
                 if (!running.load()) {
-                    std::puts("return");
                     return;
                 }
                 ::usleep(1);
@@ -50,7 +49,6 @@ namespace {
     {
         logThreadRunning().store(false);
         logThread().join();
-        std::puts("joined");
     }
 }
 
