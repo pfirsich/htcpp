@@ -11,6 +11,10 @@
 #include "log.hpp"
 #include "util.hpp"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024);
 
 class TcpConnection {
@@ -56,9 +60,11 @@ private:
     // destroyed
     class Session : public std::enable_shared_from_this<Session> {
     public:
-        Session(IoQueue& io, int fd, std::function<Response(const Request&)>& handler)
+        Session(IoQueue& io, int fd, std::function<Response(const Request&)>& handler,
+            std::string remoteAddr)
             : connection_(io, fd)
             , handler_(handler)
+            , remoteAddr_(std::move(remoteAddr))
         {
             requestBuffer_.reserve(Config::get().defaultRequestSize);
         }
@@ -144,7 +150,13 @@ private:
                 respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                 return;
             }
-            respond(handler_(*request).string(request->version), getKeepAlive(*request));
+            auto response = handler_(*request);
+            if (Config::get().accesLog) {
+                // Inspired by this: https://github.com/expressjs/morgan#predefined-formats
+                slog::info(remoteAddr_, " \"", request->requestLine, "\" ",
+                    static_cast<int>(response.status), " ", response.body.size());
+            }
+            respond(response.string(request->version), getKeepAlive(*request));
         }
 
         void respond(std::string response, bool keepAlive)
@@ -184,6 +196,7 @@ private:
 
         Connection connection_;
         std::function<Response(const Request&)>& handler_;
+        std::string remoteAddr_;
         std::string requestBuffer_;
         std::string responseBuffer_;
     };
@@ -202,8 +215,9 @@ private:
         // don't have to worry about priority inversion (I think) because it's the kernel that's
         // consuming the currently present items.
         bool added = false;
+        acceptAddrLen_ = sizeof(acceptAddr_);
         while (!added) {
-            added = io_.accept(listenSocket_, nullptr,
+            added = io_.accept(listenSocket_, &acceptAddr_, &acceptAddrLen_,
                 [this](std::error_code ec, int fd) { handleAccept(ec, fd); });
         }
     }
@@ -213,7 +227,8 @@ private:
         if (ec) {
             slog::error("Error in accept: ", ec.message());
         } else {
-            std::make_shared<Session>(io_, fd, handler_)->start();
+            const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
+            std::make_shared<Session>(io_, fd, handler_, addr)->start();
         }
 
         accept();
@@ -222,4 +237,6 @@ private:
     IoQueue& io_;
     Fd listenSocket_;
     std::function<Response(const Request&)> handler_;
+    ::sockaddr_in acceptAddr_;
+    ::socklen_t acceptAddrLen_;
 };

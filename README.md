@@ -24,9 +24,7 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 
 ## Todo
 * Find a name
-* (maybe) Access Log
-* Reload certificates and recreate certificates if they are renewed
-* certbot integration
+* certbot integration (includes reloading certificates if they are renewed)
 * Docker image (optionally including certbot)
 * Dispatch HTTP sessions to a thread pool (to increase TLS performance)
 * Support for kTLS

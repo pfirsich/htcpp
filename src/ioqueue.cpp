@@ -30,11 +30,10 @@ size_t IoQueue::getCapacity() const
     return ring_.getSqeCapacity();
 }
 
-bool IoQueue::accept(int fd, sockaddr_in* addr, HandlerEcRes cb)
+bool IoQueue::accept(int fd, sockaddr_in* addr, socklen_t* addrlen, HandlerEcRes cb)
 {
-    socklen_t addrlen = 0;
     return addSqe(
-        ring_.prepareAccept(fd, reinterpret_cast<sockaddr*>(addr), &addrlen), std::move(cb));
+        ring_.prepareAccept(fd, reinterpret_cast<sockaddr*>(addr), addrlen), std::move(cb));
 }
 
 bool IoQueue::send(int sockfd, const void* buf, size_t len, HandlerEcRes cb)
