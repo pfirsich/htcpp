@@ -1,11 +1,15 @@
 #include "ioqueue.hpp"
 
 #include "log.hpp"
+#include "util.hpp"
 
 IoQueue::IoQueue(size_t size)
     : completionHandlers_(size)
 {
-    ring_.init(size);
+    if (!ring_.init(size)) {
+        slog::fatal("Could not create io_uring: ", errnoToString(errno));
+        std::exit(1);
+    }
     if (!(ring_.getParams().features & IORING_FEAT_NODROP)) {
         slog::fatal("io_uring does not support NODROP");
         std::exit(1);
