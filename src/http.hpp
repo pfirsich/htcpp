@@ -184,6 +184,7 @@ struct Url {
 };
 
 struct Request {
+    std::string_view requestLine; // for access log
     Method method;
     Url url;
     std::string_view version;

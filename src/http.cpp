@@ -181,13 +181,13 @@ std::optional<Request> Request::parse(std::string_view requestStr)
     if (requestLineEnd == std::string::npos) {
         return std::nullopt;
     }
-    const auto requestLine = requestStr.substr(0, requestLineEnd);
+    req.requestLine = requestStr.substr(0, requestLineEnd);
 
-    const auto methodDelim = requestLine.find(' ');
+    const auto methodDelim = req.requestLine.find(' ');
     if (methodDelim == std::string::npos) {
         return std::nullopt;
     }
-    const auto methodStr = requestLine.substr(0, methodDelim);
+    const auto methodStr = req.requestLine.substr(0, methodDelim);
     // We'll allow OPTIONS in HTTP/1.0 too
     const auto method = parseMethod(methodStr);
     if (!method) {
@@ -197,25 +197,25 @@ std::optional<Request> Request::parse(std::string_view requestStr)
 
     // I could skip all whitespace here to be more robust, but RFC2616 5.1 only mentions 1 SP
     const auto urlStart = methodDelim + 1;
-    if (urlStart >= requestLine.size()) {
+    if (urlStart >= req.requestLine.size()) {
         return std::nullopt;
     }
     // SHOULD actually return "414 Request-URI Too Long" here (RFC2616 3.2.1)
-    const auto urlLen = requestLine.substr(urlStart, Config::get().maxUrlLength).find(' ');
+    const auto urlLen = req.requestLine.substr(urlStart, Config::get().maxUrlLength).find(' ');
     if (urlLen == std::string::npos) {
         return std::nullopt;
     }
-    const auto url = Url::parse(requestLine.substr(urlStart, urlLen));
+    const auto url = Url::parse(req.requestLine.substr(urlStart, urlLen));
     if (!url) {
         return std::nullopt;
     }
     req.url = url.value();
 
     const auto versionStart = urlStart + urlLen + 1;
-    if (versionStart > requestLine.size()) {
+    if (versionStart > req.requestLine.size()) {
         return std::nullopt;
     }
-    req.version = requestLine.substr(versionStart);
+    req.version = req.requestLine.substr(versionStart);
 
     if (req.version.size() != 8 || req.version.substr(0, 7) != "HTTP/1."
         || (req.version[7] != '0' && req.version[7] != '1')) {
