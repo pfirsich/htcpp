@@ -69,6 +69,12 @@ private:
             requestBuffer_.reserve(Config::get().defaultRequestSize);
         }
 
+        ~Session() = default;
+        Session(const Session&) = default;
+        Session(Session&&) = default;
+        Session& operator=(const Session&) = default;
+        Session& operator=(Session&&) = default;
+
         void start()
         {
             // readRequests is not part of the constructor and in this separate method, because
@@ -78,13 +84,6 @@ private:
             requestBuffer_.clear();
             readRequest();
         }
-
-        ~Session() = default;
-
-        Session(const Session&) = default;
-        Session(Session&&) = default;
-        Session& operator=(const Session&) = default;
-        Session& operator=(Session&&) = default;
 
     private:
         void readRequest()
@@ -110,11 +109,16 @@ private:
                         return;
                     }
 
+                    if (readBytes == 0) {
+                        connection_.close();
+                        return;
+                    }
+
                     if (readBytes > 0) {
                         requestBuffer_.resize(requestBuffer_.size() - readAmount + readBytes);
                     }
 
-                    if (readBytes == 0 || static_cast<size_t>(readBytes) < readAmount) {
+                    if (static_cast<size_t>(readBytes) < readAmount) {
                         // Done reading
                         processRequest(requestBuffer_);
                     } else if (requestBuffer_.size() >= Config::get().maxRequestSize) {
