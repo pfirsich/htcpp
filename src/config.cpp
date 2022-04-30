@@ -10,32 +10,9 @@
 #include <sys/socket.h>
 
 #include "log.hpp"
+#include "string.hpp"
 
 namespace {
-template <typename T = long long>
-std::optional<T> parseInt(const std::string& str, int base = 10)
-{
-    static constexpr auto min = std::numeric_limits<T>::min();
-    static constexpr auto max = std::numeric_limits<T>::max();
-    using IntMax = std::conditional_t<std::is_unsigned_v<T>, uintmax_t, intmax_t>;
-    try {
-        size_t pos = 0;
-        IntMax val;
-        if constexpr (std::is_unsigned_v<T>) {
-            val = std::stoull(str, &pos, base);
-        } else {
-            val = std::stoll(str, &pos, base);
-        }
-        if (pos < str.size())
-            return std::nullopt;
-        if (val < min || val > max)
-            return std::nullopt;
-        return static_cast<T>(val);
-    } catch (const std::exception&) {
-        return std::nullopt;
-    }
-}
-
 std::optional<std::string> getEnv(const char* name)
 {
     const auto var = std::getenv(name);
