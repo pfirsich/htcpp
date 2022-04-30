@@ -60,13 +60,15 @@ private:
     std::shared_ptr<SslContext> currentContext_;
 };
 
-struct OpenSslErrorCategoryT : public std::error_category {
+struct OpenSslErrorCategory : public std::error_category {
 public:
     const char* name() const noexcept override;
     std::string message(int errorCode) const override;
+
+    static std::error_code makeError();
 };
 
-extern const OpenSslErrorCategoryT OpenSslErrorCategory;
+OpenSslErrorCategory& getOpenSslErrorCategory();
 
 enum class SslOperation { Read, Write, Shutdown };
 std::string toString(SslOperation op);
@@ -95,6 +97,8 @@ public:
     SslConnection(IoQueue& io, int fd);
     ~SslConnection();
 
+    // If a handler of any of these three functions comes back with an error,
+    // don't do any other IO on the socket and do not call shutdown (just close it).
     void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);
     void send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler);
     void shutdown(IoQueue::HandlerEc handler);
@@ -107,8 +111,6 @@ public:
 private:
     template <SslOperation Op>
     void performSslOperation(void* buffer, size_t length, IoQueue::HandlerEcRes handler);
-
-    void tcpShutdown(IoQueue::HandlerEcRes handler);
 
     SSL* ssl_;
     BIO* externalBio_ = nullptr;

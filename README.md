@@ -26,7 +26,7 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 * Find a name
 * certbot integration (includes reloading certificates if they are renewed)
 * Docker image (optionally including certbot)
-* Dispatch HTTP sessions to a thread pool (to increase TLS performance)
 * Support for kTLS
+* Dispatch HTTP sessions to a thread pool (to increase TLS performance). I will likely only deploy this on very small single vCPU VMs, so I don't need this yet.
 * URL percent decoding (didn't need it yet)
 * Compression (didn't need it yet)

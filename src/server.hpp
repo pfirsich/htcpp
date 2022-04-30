@@ -102,7 +102,11 @@ private:
                     std::error_code ec, int readBytes) {
                     if (ec) {
                         slog::error("Error in recv: ", ec.message());
-                        shutdown();
+                        // Error might be ECONNRESET, EPIPE (from send) or others, where we just
+                        // want to close. There might be errors, where shutdown is better, but
+                        // especially with SSL almost all errors here require us to NOT shutdown.
+                        // Same applies for send below.
+                        connection_.close();
                         return;
                     }
 
@@ -169,23 +173,42 @@ private:
             responseBuffer_ = std::move(response);
             connection_.send(responseBuffer_.data(), responseBuffer_.size(),
                 [this, self = this->shared_from_this(), keepAlive, size = responseBuffer_.size()](
-                    std::error_code ec, int sent) {
+                    std::error_code ec, int sentBytes) {
                     if (ec) {
+                        // I think there are no errors, where we want to shutdown.
+                        // Note that ec could be an error that can not be returned by ::send,
+                        // because with SSL it might do ::recv as part of Connection::send.
                         slog::error("Error in send: ", ec.message());
-                    } else if (sent < static_cast<int>(size)) {
-                        // When does this happen?
-                        slog::error("Incomplete send: ", ec.message());
-                    }
-                    if (ec || sent < static_cast<int>(size) || !keepAlive) {
-                        // If something went wrong (error or incomplete) let the client
-                        // retry the whole request.
-                        shutdown();
+                        connection_.close();
                         return;
                     }
-                    start();
+
+                    if (sentBytes == 0) {
+                        // I don't know when this would happen for TCP.
+                        // For SSL this will happen, when the remote peer closed the
+                        // connection during a recv that's part of an SSL_write.
+                        // In that case we close (since we can't shutdown).
+                        connection_.close();
+                        return;
+                    }
+
+                    if (sentBytes < static_cast<int>(size)) {
+                        // This should not happen with blocking sockets.
+                        slog::error("Incomplete send: ", sentBytes, "/", size);
+                        connection_.close();
+                        return;
+                    }
+
+                    if (keepAlive) {
+                        start();
+                    } else {
+                        shutdown();
+                    }
                 });
         }
 
+        // If this only supported TCP, then using close everywhere would be fine.
+        // The difference is most important for TLS, where shutdown will call SSL_shutdown.
         void shutdown()
         {
             connection_.shutdown([this, self = this->shared_from_this()](std::error_code) {

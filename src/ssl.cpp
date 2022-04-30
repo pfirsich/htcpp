@@ -132,17 +132,28 @@ bool SslContextManager::updateContext()
     return currentContext_->init(certChainPath_, keyPath_);
 }
 
-const char* OpenSslErrorCategoryT::name() const noexcept
+const char* OpenSslErrorCategory::name() const noexcept
 {
     return "OpenSSL Error Category";
 }
 
-std::string OpenSslErrorCategoryT::message(int errorCode) const
+std::string OpenSslErrorCategory::message(int errorCode) const
 {
-    return sslErrorToString(errorCode);
+    char buf[256];
+    ERR_error_string_n(static_cast<unsigned long>(errorCode), buf, sizeof(buf));
+    return buf;
 }
 
-const OpenSslErrorCategoryT OpenSslErrorCategory;
+std::error_code OpenSslErrorCategory::makeError()
+{
+    return std::error_code { static_cast<int>(::ERR_get_error()), getOpenSslErrorCategory() };
+}
+
+OpenSslErrorCategory& getOpenSslErrorCategory()
+{
+    static OpenSslErrorCategory cat;
+    return cat;
+}
 
 std::string toString(SslOperation op)
 {
@@ -274,12 +285,10 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
             [this, buffer, length, handler = std::move(handler), readFromBio](
                 std::error_code ec, int sentBytes) {
                 if (ec) {
-                    slog::error("Error in send: ", ec.message());
+                    slog::debug("Error in send (SSL): ", ec.message());
                     // Because a read error would result in a SSL_ERROR_SYSCALL if OpenSSL did
-                    // the syscalls itself, we also do not call SSL_shutdown, don't bubble up
-                    // the error (which would result in SSL_shutdown also) and simply close the
-                    // connection.
-                    tcpShutdown(std::move(handler));
+                    // the syscalls itself, we also should not call SSL_shutdown.
+                    handler(ec, -1);
                     return;
                 }
 
@@ -296,9 +305,9 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
             [this, buffer, length, handler = std::move(handler)](
                 std::error_code ec, int readBytes) {
                 if (ec) {
-                    slog::error("Error in recv: ", ec.message());
+                    slog::debug("Error in recv (SSL): ", ec.message());
                     // See branch for SSL_ERROR_WANT_WRITE
-                    tcpShutdown(std::move(handler));
+                    handler(ec, -1);
                     return;
                 }
 
@@ -317,11 +326,11 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
         // must not be called"
         slog::error("SSL Error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
             getSslErrorString());
-        tcpShutdown(std::move(handler));
+        handler(OpenSslErrorCategory::makeError(), -1);
     } else {
         slog::error("Unexpected SSL error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
             getSslErrorString());
-        tcpShutdown(std::move(handler));
+        handler(OpenSslErrorCategory::makeError(), -1);
     }
 
     ::ERR_clear_error();
@@ -333,9 +342,3 @@ template void SslConnection::performSslOperation<SslOperation::Write>(
     void* buffer, size_t length, IoQueue::HandlerEcRes handler);
 template void SslConnection::performSslOperation<SslOperation::Shutdown>(
     void* buffer, size_t length, IoQueue::HandlerEcRes handler);
-
-void SslConnection::tcpShutdown(IoQueue::HandlerEcRes handler)
-{
-    TcpConnection::shutdown(
-        [this, handler = std::move(handler)](std::error_code) { TcpConnection::close(); });
-}
