@@ -255,11 +255,12 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
     const auto pending = BIO_ctrl_pending(externalBio_);
 
     if (sslError == SSL_ERROR_NONE) {
+        // TODO: HANDLE pending
         handler(std::error_code {}, sslResult);
     } else if (sslError == SSL_ERROR_ZERO_RETURN) {
+        // TODO: HANDLE pending
         // The remote peer closed the connection.
-        // We should bubble up an error so a SSL_shutdown will be initated.
-        handler(std::error_code(sslError, OpenSslErrorCategory), sslResult);
+        handler(std::error_code {}, 0);
     } else if (pending > 0 || sslError == SSL_ERROR_WANT_WRITE) {
         // If we can read or write (pending > 0 and SSL_ERROR_WANT_READ), we rather write,
         // because then we can proceed quicker (writing should mostly finish quicker than
