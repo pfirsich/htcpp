@@ -282,6 +282,12 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
                     tcpShutdown(std::move(handler));
                     return;
                 }
+
+                if (sentBytes == 0) {
+                    handler(std::error_code {}, 0);
+                    return;
+                }
+
                 assert(readFromBio == sentBytes);
                 performSslOperation<Op>(buffer, length, std::move(handler));
             });
@@ -293,6 +299,11 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
                     slog::error("Error in recv: ", ec.message());
                     // See branch for SSL_ERROR_WANT_WRITE
                     tcpShutdown(std::move(handler));
+                    return;
+                }
+
+                if (readBytes == 0) {
+                    handler(std::error_code {}, 0);
                     return;
                 }
 
