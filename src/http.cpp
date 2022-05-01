@@ -222,20 +222,24 @@ std::optional<Request> Request::parse(std::string_view requestStr)
         return std::nullopt;
     }
 
-    size_t lineStart = requestLineEnd + 2;
-    lineStart += 2;
+    auto headerLineStart = requestLineEnd + 2;
+    const auto headersEnd = requestStr.find("\r\n\r\n", headerLineStart);
 
-    while (lineStart < requestStr.size()) {
-        const auto lineEnd = requestStr.find("\r\n", lineStart);
-        if (lineEnd == std::string_view::npos) {
+    if (headersEnd == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    while (headerLineStart < headersEnd) {
+        const auto headerLineEnd = requestStr.find("\r\n", headerLineStart);
+        if (headerLineEnd == std::string_view::npos) {
             return std::nullopt;
         }
-        if (lineStart == lineEnd) {
+        if (headerLineStart == headerLineEnd) {
             // skip newlines and end header parsing
-            lineStart += 2;
+            headerLineStart += 2;
             break;
         } else {
-            const auto line = requestStr.substr(lineStart, lineEnd - lineStart);
+            const auto line = requestStr.substr(headerLineStart, headerLineEnd - headerLineStart);
             auto colon = line.find(':');
             if (colon == std::string_view::npos) {
                 return std::nullopt;
@@ -251,9 +255,11 @@ std::optional<Request> Request::parse(std::string_view requestStr)
             }
             const auto value = line.substr(valueStart, valueEnd - valueStart);
             req.headers.add(name, value);
-            lineStart = lineEnd + 2;
+            headerLineStart = headerLineEnd + 2;
         }
     }
+
+    req.body = requestStr.substr(headersEnd + 4);
 
     return req;
 }
