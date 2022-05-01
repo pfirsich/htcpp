@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include "config.hpp"
+#include "log.hpp"
 
 std::optional<Method> parseMethod(std::string_view method)
 {
@@ -179,18 +180,21 @@ std::optional<Request> Request::parse(std::string_view requestStr)
 
     const auto requestLineEnd = requestStr.find("\r\n");
     if (requestLineEnd == std::string::npos) {
+        slog::debug("No request line end");
         return std::nullopt;
     }
     req.requestLine = requestStr.substr(0, requestLineEnd);
 
     const auto methodDelim = req.requestLine.find(' ');
     if (methodDelim == std::string::npos) {
+        slog::debug("No method delimiter");
         return std::nullopt;
     }
     const auto methodStr = req.requestLine.substr(0, methodDelim);
     // We'll allow OPTIONS in HTTP/1.0 too
     const auto method = parseMethod(methodStr);
     if (!method) {
+        slog::debug("Invalid method");
         return std::nullopt;
     }
     req.method = *method;
@@ -198,27 +202,32 @@ std::optional<Request> Request::parse(std::string_view requestStr)
     // I could skip all whitespace here to be more robust, but RFC2616 5.1 only mentions 1 SP
     const auto urlStart = methodDelim + 1;
     if (urlStart >= req.requestLine.size()) {
+        slog::debug("No URL");
         return std::nullopt;
     }
     // SHOULD actually return "414 Request-URI Too Long" here (RFC2616 3.2.1)
     const auto urlLen = req.requestLine.substr(urlStart, Config::get().maxUrlLength).find(' ');
     if (urlLen == std::string::npos) {
+        slog::debug("No URL end");
         return std::nullopt;
     }
     const auto url = Url::parse(req.requestLine.substr(urlStart, urlLen));
     if (!url) {
+        slog::debug("Invalid URL");
         return std::nullopt;
     }
     req.url = url.value();
 
     const auto versionStart = urlStart + urlLen + 1;
     if (versionStart > req.requestLine.size()) {
+        slog::debug("No version start");
         return std::nullopt;
     }
     req.version = req.requestLine.substr(versionStart);
 
     if (req.version.size() != 8 || req.version.substr(0, 7) != "HTTP/1."
         || (req.version[7] != '0' && req.version[7] != '1')) {
+        slog::debug("Invalid version");
         return std::nullopt;
     }
 
@@ -226,12 +235,14 @@ std::optional<Request> Request::parse(std::string_view requestStr)
     const auto headersEnd = requestStr.find("\r\n\r\n", headerLineStart);
 
     if (headersEnd == std::string_view::npos) {
+        slog::debug("No headers end");
         return std::nullopt;
     }
 
     while (headerLineStart < headersEnd) {
         const auto headerLineEnd = requestStr.find("\r\n", headerLineStart);
         if (headerLineEnd == std::string_view::npos) {
+            slog::debug("No header line end");
             return std::nullopt;
         }
         if (headerLineStart == headerLineEnd) {
@@ -242,6 +253,7 @@ std::optional<Request> Request::parse(std::string_view requestStr)
             const auto line = requestStr.substr(headerLineStart, headerLineEnd - headerLineStart);
             auto colon = line.find(':');
             if (colon == std::string_view::npos) {
+                slog::debug("No colon");
                 return std::nullopt;
             }
             const auto name = line.substr(0, colon);
