@@ -20,6 +20,12 @@ void TcpConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler
     io_.recv(fd_, buffer, len, std::move(handler));
 }
 
+void TcpConnection::recv(void* buffer, size_t len, IoQueue::Timespec* timeout,
+    bool timeoutIsAbsolute, IoQueue::HandlerEcRes handler)
+{
+    io_.recv(fd_, buffer, len, timeout, timeoutIsAbsolute, std::move(handler));
+}
+
 void TcpConnection::send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
     io_.send(fd_, buffer, len, std::move(handler));

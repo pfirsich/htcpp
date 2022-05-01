@@ -18,6 +18,11 @@ private:
 public:
     using HandlerEc = std::function<void(std::error_code ec)>;
     using HandlerEcRes = std::function<void(std::error_code ec, int res)>;
+    using Timespec = IoURing::Timespec;
+
+    // These are both relative with respect to their arguments, but naming these is hard.
+    static void setRelativeTimeout(Timespec* ts, uint64_t milliseconds);
+    static void setAbsoluteTimeout(Timespec* ts, uint64_t milliseconds);
 
     IoQueue(size_t size = 1024);
 
@@ -34,7 +39,8 @@ public:
     // res argument is received bytes
     bool recv(int sockfd, void* buf, size_t len, HandlerEcRes cb);
 
-    bool recv(int sockfd, void* buf, size_t len, uint64_t timeoutMs, HandlerEcRes cb);
+    bool recv(int sockfd, void* buf, size_t len, Timespec* timeout, bool timeoutIsAbsolute,
+        HandlerEcRes cb);
 
     bool close(int fd, HandlerEc cb);
 
@@ -52,7 +58,7 @@ private:
     bool addSqe(io_uring_sqe* sqe, Callback cb);
 
     template <typename Callback>
-    bool addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback cb);
+    bool addSqe(io_uring_sqe* sqe, Timespec* timeout, bool timeoutIsAbsolute, Callback cb);
 
     IoURing ring_;
     SlotMap<CompletionHandler> completionHandlers_;

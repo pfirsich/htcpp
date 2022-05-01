@@ -11,8 +11,7 @@ struct Config {
 
     size_t listenBacklog = SOMAXCONN;
     size_t ioQueueSize = 2048; // power of two, >= 1, <= 4096
-    size_t singleReadTimeoutMs = 512; // todo
-    size_t fullReadTimeoutMs = 1024; // todo
+    size_t fullReadTimeoutMs = 1000;
     size_t maxUrlLength = 512;
     // maxRequestHeaderSize is actually the max size of request line + all headers
     // 1024 is enough for most requests, mostly less than MTU

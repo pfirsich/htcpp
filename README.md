@@ -24,9 +24,11 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 
 ## Todo
 * Find a name
+* Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now.
 * certbot integration (includes reloading certificates if they are renewed)
 * Docker image (optionally including certbot)
 * Support for kTLS
 * Dispatch HTTP sessions to a thread pool (to increase TLS performance). I will likely only deploy this on very small single vCPU VMs, so I don't need this yet.
 * URL percent decoding (didn't need it yet)
 * Compression (didn't need it yet)
+* Large file transfer (with `sendfile` or `slice`)

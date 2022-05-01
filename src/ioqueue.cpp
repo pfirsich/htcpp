@@ -1,7 +1,25 @@
 #include "ioqueue.hpp"
 
+#include <time.h>
+
 #include "log.hpp"
 #include "util.hpp"
+
+void IoQueue::setRelativeTimeout(Timespec* ts, uint64_t milliseconds)
+{
+    ts->tv_sec = milliseconds / 1000;
+    ts->tv_nsec = (milliseconds % 1000) * 1000 * 1000;
+}
+
+void IoQueue::setAbsoluteTimeout(Timespec* ts, uint64_t milliseconds)
+{
+    ::timespec nowTs;
+    ::clock_gettime(CLOCK_MONOTONIC, &nowTs);
+    ts->tv_sec = nowTs.tv_sec + milliseconds / 1000;
+    ts->tv_nsec = nowTs.tv_nsec + (milliseconds % 1000) * 1000 * 1000;
+    ts->tv_sec += ts->tv_nsec / (1000 * 1000 * 1000);
+    ts->tv_nsec = ts->tv_nsec % (1000 * 1000 * 1000);
+}
 
 IoQueue::IoQueue(size_t size)
     : completionHandlers_(size)
@@ -46,9 +64,10 @@ bool IoQueue::recv(int sockfd, void* buf, size_t len, HandlerEcRes cb)
     return addSqe(ring_.prepareRecv(sockfd, buf, len), std::move(cb));
 }
 
-bool IoQueue::recv(int sockfd, void* buf, size_t len, uint64_t timeoutMs, HandlerEcRes cb)
+bool IoQueue::recv(int sockfd, void* buf, size_t len, IoQueue::Timespec* timeout,
+    bool timeoutIsAbsolute, HandlerEcRes cb)
 {
-    return addSqe(ring_.prepareRecv(sockfd, buf, len), timeoutMs, std::move(cb));
+    return addSqe(ring_.prepareRecv(sockfd, buf, len), timeout, timeoutIsAbsolute, std::move(cb));
 }
 
 bool IoQueue::close(int fd, HandlerEc cb)
@@ -120,7 +139,7 @@ template bool IoQueue::addSqe<IoQueue::HandlerEc>(io_uring_sqe* sqe, IoQueue::Ha
 template bool IoQueue::addSqe<IoQueue::HandlerEcRes>(io_uring_sqe* sqe, IoQueue::HandlerEcRes cb);
 
 template <typename Callback>
-bool IoQueue::addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback cb)
+bool IoQueue::addSqe(io_uring_sqe* sqe, Timespec* timeout, bool timeoutIsAbsolute, Callback cb)
 {
     if (!sqe) {
         slog::warning("io_uring full");
@@ -128,16 +147,13 @@ bool IoQueue::addSqe(io_uring_sqe* sqe, size_t timeoutMs, Callback cb)
     }
     sqe->user_data = addHandler(std::move(cb));
     sqe->flags |= IOSQE_IO_LINK;
-    __kernel_timespec ts;
-    ts.tv_sec = timeoutMs / 1000;
-    ts.tv_nsec = (timeoutMs % 1000) * 1000 * 1000;
-    auto timeoutSqe = ring_.prepareLinkTimeout(&ts);
+    auto timeoutSqe = ring_.prepareLinkTimeout(timeout, timeoutIsAbsolute ? IORING_TIMEOUT_ABS : 0);
     timeoutSqe->user_data = Ignore;
     ring_.submitSqes();
     return true;
 }
 
 template bool IoQueue::addSqe<IoQueue::HandlerEc>(
-    io_uring_sqe* sqe, size_t timeoutMs, IoQueue::HandlerEc cb);
+    io_uring_sqe* sqe, Timespec* timeout, bool timeoutIsAbsolute, IoQueue::HandlerEc cb);
 template bool IoQueue::addSqe<IoQueue::HandlerEcRes>(
-    io_uring_sqe* sqe, size_t timeoutMs, IoQueue::HandlerEcRes cb);
+    io_uring_sqe* sqe, Timespec* timeout, bool timeoutIsAbsolute, IoQueue::HandlerEcRes cb);

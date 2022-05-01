@@ -22,6 +22,8 @@ public:
     TcpConnection(IoQueue& io, int fd);
 
     void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);
+    void recv(void* buffer, size_t len, IoQueue::Timespec* timeout, bool timeoutIsAbsolute,
+        IoQueue::HandlerEcRes handler);
     void send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler);
     void shutdown(IoQueue::HandlerEc handler);
     void close();
@@ -100,6 +102,8 @@ private:
         {
             requestHeaderBuffer_.clear();
             requestBodyBuffer_.clear();
+            IoQueue::setAbsoluteTimeout(&readTimeout_, Config::get().fullReadTimeoutMs);
+
             const auto recvLen = Config::get().maxRequestHeaderSize;
             requestHeaderBuffer_.append(recvLen, '\0');
             connection_.recv(requestHeaderBuffer_.data(), recvLen,
@@ -165,7 +169,8 @@ private:
             assert(sizeBeforeRead < contentLength);
             const auto recvLen = contentLength - sizeBeforeRead;
             requestBodyBuffer_.append(recvLen, '\0');
-            connection_.recv(requestBodyBuffer_.data() + sizeBeforeRead, recvLen,
+            auto buffer = requestBodyBuffer_.data() + sizeBeforeRead;
+            connection_.recv(buffer, recvLen,
                 [this, self = this->shared_from_this(), recvLen, contentLength](
                     std::error_code ec, int readBytes) {
                     if (ec) {
@@ -282,6 +287,7 @@ private:
         std::string requestBodyBuffer_;
         std::string responseBuffer_;
         Request request_;
+        IoQueue::Timespec readTimeout_;
     };
 
     void accept()
