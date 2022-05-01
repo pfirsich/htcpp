@@ -42,12 +42,11 @@ int main()
 
     slog::debug("Listen Backlog: ", config.listenBacklog);
     slog::debug("IO Queue Size: ", config.ioQueueSize);
-    slog::debug("Read Amount: ", config.readAmount);
     slog::debug("Single Read Timeout (ms): ", config.singleReadTimeoutMs);
     slog::debug("Full Read Timeout (ms): ", config.fullReadTimeoutMs);
     slog::debug("Max URL Length: ", config.maxUrlLength);
-    slog::debug("Max Request Size: ", config.maxRequestSize);
-    slog::debug("Default Request Size: ", config.defaultRequestSize);
+    slog::debug("Max Request Header Size: ", config.maxRequestHeaderSize);
+    slog::debug("Max Request Body Size: ", config.maxRequestBodySize);
 
     IoQueue io(config.ioQueueSize);
 

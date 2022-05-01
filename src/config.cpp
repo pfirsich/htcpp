@@ -83,12 +83,11 @@ Config& Config::get()
         loadIntVar(config.listenBacklog, "URHTS_LISTEN_BACKLOG");
         // If this is not a power of two, it will crash anyways
         loadIntVar(config.ioQueueSize, "URHTS_IO_QUEUE_SIZE", 1ul, 4096ul);
-        loadIntVar(config.readAmount, "URHTS_READ_AMOUNT");
         loadIntVar(config.singleReadTimeoutMs, "URHTS_SINGLE_READ_TIMEOUT_MS");
         loadIntVar(config.fullReadTimeoutMs, "URHTS_FULL_READ_TIMEOUT_MS");
         loadIntVar(config.maxUrlLength, "URHTS_MAX_URL_LENGTH");
-        loadIntVar(config.maxRequestSize, "URHTS_MAX_REQUEST_SIZE");
-        loadIntVar(config.defaultRequestSize, "URHTS_DEFAULT_REQUEST_SIZE");
+        loadIntVar(config.maxRequestHeaderSize, "URHTS_MAX_REQUEST_HEADER_SIZE");
+        loadIntVar(config.maxRequestBodySize, "URHTS_MAX_REQUEST_BODY_SIZE");
         loadBoolVar(config.useTls, "URHTS_USE_TLS");
         loadBoolVar(config.accesLog, "URHTS_ACCESS_LOG");
         loadBoolVar(config.debugLogging, "URHTS_DEBUG_LOGGING");

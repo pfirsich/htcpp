@@ -66,7 +66,8 @@ private:
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
         {
-            requestBuffer_.reserve(Config::get().defaultRequestSize);
+            requestHeaderBuffer_.reserve(Config::get().maxRequestHeaderSize);
+            requestBodyBuffer_.reserve(Config::get().maxRequestBodySize);
         }
 
         ~Session() = default;
@@ -77,30 +78,37 @@ private:
 
         void start()
         {
-            // readRequests is not part of the constructor and in this separate method, because
-            // shared_from_this must not be called until the shared_ptr constructor has completed.
-            // You would get a bad_weak_ptr exception in shared_from_this if you called it from the
-            // Session constructor.
-            requestBuffer_.clear();
+            // readRequest is not part of the constructor and in this separate method,
+            // because shared_from_this must not be called until the shared_ptr constructor has
+            // completed. You would get a bad_weak_ptr exception in shared_from_this if you called
+            // it from the Session constructor.
             readRequest();
         }
 
     private:
+        // Inspired by this: https://github.com/expressjs/morgan#predefined-formats
+        void accessLog(std::string_view requestLine, StatusCode responseStatus,
+            size_t responseContentLength) const
+        {
+            if (Config::get().accesLog) {
+                slog::info(remoteAddr_, " \"", requestLine, "\" ", static_cast<int>(responseStatus),
+                    " ", responseContentLength);
+            }
+        }
+
         void readRequest()
         {
-            const auto currentSize = requestBuffer_.size();
-            assert(currentSize < Config::get().maxRequestSize);
-            const auto readAmount
-                = std::min(Config::get().readAmount, Config::get().maxRequestSize - currentSize);
-            requestBuffer_.append(readAmount, '\0');
-            auto buf = requestBuffer_.data() + currentSize;
-            connection_.recv(buf, readAmount,
+            requestHeaderBuffer_.clear();
+            requestBodyBuffer_.clear();
+            const auto recvLen = Config::get().maxRequestHeaderSize;
+            requestHeaderBuffer_.append(recvLen, '\0');
+            connection_.recv(requestHeaderBuffer_.data(), recvLen,
                 // `this->` before `shared_from_this` is necessary or you get an error
                 // because of a dependent type lookup.
-                [this, self = this->shared_from_this(), readAmount](
+                [this, self = this->shared_from_this(), recvLen](
                     std::error_code ec, int readBytes) {
                     if (ec) {
-                        slog::error("Error in recv: ", ec.message());
+                        slog::error("Error in recv (headers): ", ec.message());
                         // Error might be ECONNRESET, EPIPE (from send) or others, where we just
                         // want to close. There might be errors, where shutdown is better, but
                         // especially with SSL almost all errors here require us to NOT shutdown.
@@ -114,23 +122,76 @@ private:
                         return;
                     }
 
-                    if (readBytes > 0) {
-                        requestBuffer_.resize(requestBuffer_.size() - readAmount + readBytes);
-                    }
+                    requestHeaderBuffer_.resize(requestHeaderBuffer_.size() - recvLen + readBytes);
 
-                    if (static_cast<size_t>(readBytes) < readAmount) {
-                        // Done reading
-                        processRequest(requestBuffer_);
-                    } else if (requestBuffer_.size() >= Config::get().maxRequestSize) {
-                        respond(
-                            "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n", false);
+                    auto request = Request::parse(requestHeaderBuffer_);
+                    if (!request) {
+                        accessLog("INVALID REQUEST", StatusCode::BadRequest, 0);
+                        respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
+                        return;
+                    }
+                    request_ = std::move(*request);
+
+                    const auto contentLength = request_.headers.get("Content-Length");
+                    if (contentLength) {
+                        const auto length = parseInt<uint64_t>(*contentLength);
+                        if (!length) {
+                            accessLog(
+                                "INVALID REQUEST (Content-Length)", StatusCode::BadRequest, 0);
+                            respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
+                            return;
+                        }
+
+                        if (*length > Config::get().maxRequestBodySize) {
+                            accessLog("INVALID REQUEST (body size)", StatusCode::BadRequest, 0);
+                            respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
+                        } else if (request_.body.size() < *length) {
+                            requestBodyBuffer_.append(request_.body);
+                            request_.body = std::string_view();
+                            readRequestBody(*length);
+                        } else {
+                            request_.body = request_.body.substr(0, *length);
+                            processRequest(request_);
+                        }
                     } else {
-                        readRequest();
+                        processRequest(request_);
                     }
                 });
         }
 
-        bool getKeepAlive(const Request& request)
+        void readRequestBody(size_t contentLength)
+        {
+            const auto sizeBeforeRead = requestBodyBuffer_.size();
+            assert(sizeBeforeRead < contentLength);
+            const auto recvLen = contentLength - sizeBeforeRead;
+            requestBodyBuffer_.append(recvLen, '\0');
+            connection_.recv(requestBodyBuffer_.data() + sizeBeforeRead, recvLen,
+                [this, self = this->shared_from_this(), recvLen, contentLength](
+                    std::error_code ec, int readBytes) {
+                    if (ec) {
+                        slog::error("Error in recv (body): ", ec.message());
+                        connection_.close();
+                        return;
+                    }
+
+                    if (readBytes == 0) {
+                        connection_.close();
+                        return;
+                    }
+
+                    requestBodyBuffer_.resize(requestBodyBuffer_.size() - recvLen + readBytes);
+
+                    if (requestBodyBuffer_.size() < contentLength) {
+                        readRequestBody(contentLength);
+                    } else {
+                        assert(requestBodyBuffer_.size() == contentLength);
+                        request_.body = std::string_view(requestBodyBuffer_);
+                        processRequest(request_);
+                    }
+                });
+        }
+
+        bool getKeepAlive(const Request& request) const
         {
             const auto connectionHeader = request.headers.get("Connection");
             if (connectionHeader) {
@@ -149,22 +210,11 @@ private:
             return false;
         }
 
-        void processRequest(std::string_view requestStr)
+        void processRequest(const Request& request)
         {
-            auto request = Request::parse(requestStr);
-            if (!request) {
-                // I hardcode this `Connection: close` here, so we disconnect clients that try to
-                // mess with us
-                respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
-                return;
-            }
-            auto response = handler_(*request);
-            if (Config::get().accesLog) {
-                // Inspired by this: https://github.com/expressjs/morgan#predefined-formats
-                slog::info(remoteAddr_, " \"", request->requestLine, "\" ",
-                    static_cast<int>(response.status), " ", response.body.size());
-            }
-            respond(response.string(request->version), getKeepAlive(*request));
+            const auto response = handler_(request);
+            accessLog(request.requestLine, response.status, response.body.size());
+            respond(response.string(request.version), getKeepAlive(request));
         }
 
         void respond(std::string response, bool keepAlive)
@@ -224,8 +274,14 @@ private:
         Connection connection_;
         std::function<Response(const Request&)>& handler_;
         std::string remoteAddr_;
-        std::string requestBuffer_;
+        // The Request object is the result of request header parsing and consists of many
+        // string_views referencing the buffer that the request was parsed from. If that buffer
+        // would have to be resized (because of a large body not yet fully received), these
+        // references would be invalidated. Hence the body is saved in a separate buffer.
+        std::string requestHeaderBuffer_;
+        std::string requestBodyBuffer_;
         std::string responseBuffer_;
+        Request request_;
     };
 
     void accept()
