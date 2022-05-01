@@ -291,6 +291,7 @@ Response::Response(StatusCode status, std::string body, std::string_view content
 std::string Response::string(std::string_view httpVersion) const
 {
     std::string s;
+    s.reserve(512);
     auto size = 12 + 2; // status line
     const auto headerEntries = headers.getEntries();
     for (const auto& [name, value] : headerEntries) {
@@ -303,15 +304,18 @@ std::string Response::string(std::string_view httpVersion) const
     s.append(std::to_string(static_cast<int>(status)));
     // The reason phrase may be empty, but the separator space is not optional
     s.append(" \r\n");
-    if (!body.empty()) {
-        s.append("Content-Length: ");
-        s.append(std::to_string(body.size()));
-        s.append("\r\n");
-    }
     for (const auto& [name, value] : headerEntries) {
+        if (ciEqual(name, "Content-Length")) {
+            continue;
+        }
         s.append(name);
         s.append(": ");
         s.append(value);
+        s.append("\r\n");
+    }
+    if (!body.empty()) {
+        s.append("Content-Length: ");
+        s.append(std::to_string(body.size()));
         s.append("\r\n");
     }
     s.append("\r\n");
