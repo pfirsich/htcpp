@@ -88,7 +88,12 @@ bool IoQueue::poll(int fd, short events, HandlerEcRes cb)
 void IoQueue::run()
 {
     while (true) {
-        const auto cqe = ring_.waitCqe();
+        const auto res = ring_.submitSqes(1);
+        if (res < 0) {
+            slog::error("Error submitting SQEs: ", errnoToString(errno));
+            continue;
+        }
+        const auto cqe = ring_.peekCqe();
         assert(cqe);
 
         if (cqe->user_data != Ignore) {
@@ -131,7 +136,6 @@ bool IoQueue::addSqe(io_uring_sqe* sqe, Callback cb)
         return false;
     }
     sqe->user_data = addHandler(std::move(cb));
-    ring_.submitSqes();
     return true;
 }
 
@@ -149,7 +153,6 @@ bool IoQueue::addSqe(io_uring_sqe* sqe, Timespec* timeout, bool timeoutIsAbsolut
     sqe->flags |= IOSQE_IO_LINK;
     auto timeoutSqe = ring_.prepareLinkTimeout(timeout, timeoutIsAbsolute ? IORING_TIMEOUT_ABS : 0);
     timeoutSqe->user_data = Ignore;
-    ring_.submitSqes();
     return true;
 }
 
