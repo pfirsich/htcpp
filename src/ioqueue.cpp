@@ -70,6 +70,11 @@ bool IoQueue::recv(int sockfd, void* buf, size_t len, IoQueue::Timespec* timeout
     return addSqe(ring_.prepareRecv(sockfd, buf, len), timeout, timeoutIsAbsolute, std::move(cb));
 }
 
+bool IoQueue::read(int fd, void* buf, size_t count, HandlerEcRes cb)
+{
+    return addSqe(ring_.prepareRead(fd, buf, count), std::move(cb));
+}
+
 bool IoQueue::close(int fd, HandlerEc cb)
 {
     return addSqe(ring_.prepareClose(fd), std::move(cb));

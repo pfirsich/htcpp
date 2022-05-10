@@ -18,6 +18,8 @@ public:
     bool watch(std::string_view path, std::function<void(std::string_view path)> callback);
 
 private:
+    static constexpr auto eventBufferLen = 8 * (sizeof(inotify_event) + NAME_MAX + 1);
+
     struct FileWatch {
         std::string path;
         std::string filename;
@@ -30,11 +32,12 @@ private:
         std::unordered_map<std::string, FileWatch> fileWatches = {};
     };
 
-    void pollInotify();
-
-    void onInotifyReadable(std::error_code ec, int revents);
+    void read();
+    void onRead(std::error_code ec, int readBytes);
 
     IoQueue& io_;
     Fd inotifyFd_;
     std::unordered_map<std::string, DirWatch> dirWatches_;
+
+    char eventBuffer_[eventBufferLen];
 };

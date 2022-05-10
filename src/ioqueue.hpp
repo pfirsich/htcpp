@@ -42,6 +42,8 @@ public:
     bool recv(int sockfd, void* buf, size_t len, Timespec* timeout, bool timeoutIsAbsolute,
         HandlerEcRes cb);
 
+    bool read(int fd, void* buf, size_t count, HandlerEcRes cb);
+
     bool close(int fd, HandlerEc cb);
 
     bool shutdown(int fd, int how, HandlerEc cb);

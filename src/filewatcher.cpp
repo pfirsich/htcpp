@@ -15,7 +15,7 @@ FileWatcher::FileWatcher(IoQueue& io)
         std::exit(1);
     }
 
-    pollInotify();
+    read();
 }
 
 FileWatcher::~FileWatcher()
@@ -52,32 +52,23 @@ bool FileWatcher::watch(std::string_view path, std::function<void(std::string_vi
     return true;
 }
 
-void FileWatcher::pollInotify()
+void FileWatcher::read()
 {
-    io_.poll(inotifyFd_, POLLIN,
-        [this](std::error_code ec, int revents) { onInotifyReadable(ec, revents); });
+    io_.read(inotifyFd_, eventBuffer_, eventBufferLen,
+        [this](std::error_code ec, int readBytes) { onRead(ec, readBytes); });
 }
 
-void FileWatcher::onInotifyReadable(std::error_code ec, int /*revents*/)
+void FileWatcher::onRead(std::error_code ec, int readBytes)
 {
     if (ec) {
-        slog::error("Error polling inotify fd: ", ec.message());
-        pollInotify();
+        slog::error("Error reading inotify fd: ", ec.message());
+        read();
         return;
     }
 
-    // TODO: Read all of them reliably
-    static constexpr auto eventBufLen = 16 * (sizeof(inotify_event) + NAME_MAX + 1);
-    static char eventBuffer[eventBufLen];
-
-    const auto len = ::read(inotifyFd_, eventBuffer, eventBufLen);
-    if (len < 0 && errno != EAGAIN) {
-        slog::error("Error reading inotify notifications: ", errnoToString(errno));
-    }
-
     long i = 0;
-    while (i < len) {
-        const auto event = reinterpret_cast<const ::inotify_event*>(&eventBuffer[i]);
+    while (i < readBytes) {
+        const auto event = reinterpret_cast<const ::inotify_event*>(&eventBuffer_[i]);
 
         const auto dit = std::find_if(dirWatches_.begin(), dirWatches_.end(),
             [event](const auto& entry) { return entry.second.wd == event->wd; });
@@ -102,6 +93,8 @@ void FileWatcher::onInotifyReadable(std::error_code ec, int /*revents*/)
         }
         i += sizeof(inotify_event) + event->len;
     }
+    // If the following assert fails, we have read an event partially. This should not happen.
+    assert(i == readBytes);
 
-    pollInotify();
+    read();
 }
