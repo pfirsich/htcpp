@@ -17,6 +17,7 @@ src = [
   'src/main.cpp',
   'src/router.cpp',
   'src/server.cpp',
+  'src/stats.cpp',
   'src/string.cpp',
   'src/util.cpp',
 ]

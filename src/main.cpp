@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -102,6 +104,19 @@ int main()
             const auto ext = path.substr(std::min(extDelim + 1, path.size()));
             return Response(*f, getMimeType(std::string(ext)));
         });
+
+    router.route("/status", [](const Request&, const Router::RouteParams&) -> Response {
+        std::stringstream ss;
+        const auto& stats = Stats::get();
+        ss << "connAccepted: " << stats.connAccepted << "\n";
+        ss << "connDropped: " << stats.connDropped << "\n";
+        ss << "connActive: " << stats.connActive << "\n";
+        ss << "recvError: " << stats.recvError << "\n";
+        ss << "sendError: " << stats.sendError << "\n";
+        ss << "reqReceived: " << stats.reqReceived << "\n";
+        ss << "reqError: " << stats.reqError << "\n";
+        return Response(ss.str(), "text/plain");
+    });
 
     if (config.useTls) {
 #ifdef TLS_SUPPORT_ENABLED

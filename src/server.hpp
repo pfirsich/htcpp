@@ -9,6 +9,7 @@
 #include "http.hpp"
 #include "ioqueue.hpp"
 #include "log.hpp"
+#include "stats.hpp"
 #include "util.hpp"
 
 #include <arpa/inet.h>
@@ -70,9 +71,14 @@ private:
         {
             requestHeaderBuffer_.reserve(Config::get().maxRequestHeaderSize);
             requestBodyBuffer_.reserve(Config::get().maxRequestBodySize);
+            Stats::get().connActive++;
         }
 
-        ~Session() = default;
+        ~Session()
+        {
+            Stats::get().connActive--;
+        }
+
         Session(const Session&) = default;
         Session(Session&&) = default;
         Session& operator=(const Session&) = default;
@@ -112,6 +118,7 @@ private:
                 [this, self = this->shared_from_this(), recvLen](
                     std::error_code ec, int readBytes) {
                     if (ec) {
+                        Stats::get().recvError++;
                         slog::error("Error in recv (headers): ", ec.message());
                         // Error might be ECONNRESET, EPIPE (from send) or others, where we just
                         // want to close. There might be errors, where shutdown is better, but
@@ -131,6 +138,7 @@ private:
                     auto request = Request::parse(requestHeaderBuffer_);
                     if (!request) {
                         accessLog("INVALID REQUEST", StatusCode::BadRequest, 0);
+                        Stats::get().reqError++;
                         respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                         return;
                     }
@@ -142,12 +150,14 @@ private:
                         if (!length) {
                             accessLog(
                                 "INVALID REQUEST (Content-Length)", StatusCode::BadRequest, 0);
+                            Stats::get().reqError++;
                             respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                             return;
                         }
 
                         if (*length > Config::get().maxRequestBodySize) {
                             accessLog("INVALID REQUEST (body size)", StatusCode::BadRequest, 0);
+                            Stats::get().reqError++;
                             respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                         } else if (request_.body.size() < *length) {
                             requestBodyBuffer_.append(request_.body);
@@ -174,6 +184,7 @@ private:
                 [this, self = this->shared_from_this(), recvLen, contentLength](
                     std::error_code ec, int readBytes) {
                     if (ec) {
+                        Stats::get().recvError++;
                         slog::error("Error in recv (body): ", ec.message());
                         connection_.close();
                         return;
@@ -217,6 +228,7 @@ private:
 
         void processRequest(const Request& request)
         {
+            Stats::get().reqReceived++;
             const auto response = handler_(request);
             accessLog(request.requestLine, response.status, response.body.size());
             respond(response.string(request.version), getKeepAlive(request));
@@ -237,6 +249,7 @@ private:
                         // I think there are no errors, where we want to shutdown.
                         // Note that ec could be an error that can not be returned by ::send,
                         // because with SSL it might do ::recv as part of Connection::send.
+                        Stats::get().sendError++;
                         slog::error("Error in send: ", ec.message());
                         connection_.close();
                         return;
@@ -316,6 +329,7 @@ private:
         if (ec) {
             slog::error("Error in accept: ", ec.message());
         } else {
+            Stats::get().connAccepted++;
             const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
             std::make_shared<Session>(io_, fd, handler_, addr)->start();
         }
