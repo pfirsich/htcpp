@@ -7,7 +7,7 @@ struct Config {
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
     bool accesLog = true;
-    bool debugLogging = true;
+    bool debugLogging = false;
 
     size_t listenBacklog = SOMAXCONN;
     size_t ioQueueSize = 2048; // power of two, >= 1, <= 4096
