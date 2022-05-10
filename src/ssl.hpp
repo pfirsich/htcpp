@@ -65,7 +65,7 @@ public:
     const char* name() const noexcept override;
     std::string message(int errorCode) const override;
 
-    static std::error_code makeError();
+    static std::error_code makeError(unsigned long err);
 };
 
 OpenSslErrorCategory& getOpenSslErrorCategory();

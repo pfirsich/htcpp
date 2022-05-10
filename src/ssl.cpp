@@ -144,9 +144,9 @@ std::string OpenSslErrorCategory::message(int errorCode) const
     return buf;
 }
 
-std::error_code OpenSslErrorCategory::makeError()
+std::error_code OpenSslErrorCategory::makeError(unsigned long err)
 {
-    return std::error_code { static_cast<int>(::ERR_get_error()), getOpenSslErrorCategory() };
+    return std::error_code { static_cast<int>(err), getOpenSslErrorCategory() };
 }
 
 OpenSslErrorCategory& getOpenSslErrorCategory()
@@ -324,13 +324,15 @@ void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::Ha
         // "non-recoverable fatal error"
         // "no further I/O operations should be performed on the connection and SSL_shutdown
         // must not be called"
-        slog::error("SSL Error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
+        const auto ec = OpenSslErrorCategory::makeError(ERR_peek_error());
+        slog::debug("SSL Error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
             getSslErrorString());
-        handler(OpenSslErrorCategory::makeError(), -1);
+        handler(ec, -1);
     } else {
+        const auto ec = OpenSslErrorCategory::makeError(ERR_peek_error());
         slog::error("Unexpected SSL error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
             getSslErrorString());
-        handler(OpenSslErrorCategory::makeError(), -1);
+        handler(ec, -1);
     }
 
     ::ERR_clear_error();
