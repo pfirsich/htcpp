@@ -1,9 +1,13 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 #include <netinet/in.h>
 
 struct Config {
-    bool useTls = false;
+    std::optional<std::string> certPath;
+    std::optional<std::string> keyPath;
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
     bool accesLog = true;

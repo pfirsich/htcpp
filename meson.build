@@ -1,6 +1,7 @@
 project('htcpp', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++17'])
 
 liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
+clipp_dep = dependency('clipp', fallback : ['clipp', 'clipp_dep'])
 threads_dep = dependency('threads')
 openssl_dep = dependency('openssl', required : false)
 
@@ -29,4 +30,9 @@ endif
 
 executable('htcpp', src, include_directories : ['src'],
   cpp_args : flags,
-  dependencies : [threads_dep, liburingpp_dep, openssl_dep])
+  dependencies : [
+    threads_dep,
+    openssl_dep,
+    liburingpp_dep,
+    clipp_dep,
+  ])

@@ -6,11 +6,10 @@
 #include <string>
 
 #include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 #include "log.hpp"
 #include "string.hpp"
+#include "util.hpp"
 
 namespace {
 std::optional<std::string> getEnv(const char* name)
@@ -62,14 +61,13 @@ void loadAddressVar(uint32_t& var, const char* envVarName)
 {
     const auto envVar = getEnv(envVarName);
     if (envVar) {
-        ::in_addr addr;
-        const auto res = ::inet_aton(envVar->c_str(), &addr);
-        if (res == 0) {
+        const auto addr = parseIpAddress(*envVar);
+        if (!addr) {
             slog::error("Invalid address string for '", envVarName,
                 "'. Using default value: ", ::inet_ntoa(::in_addr { var }));
             return;
         }
-        var = addr.s_addr;
+        var = *addr;
     }
 }
 }
@@ -87,7 +85,8 @@ Config& Config::get()
         loadIntVar(config.maxUrlLength, "HTCPP_MAX_URL_LENGTH");
         loadIntVar(config.maxRequestHeaderSize, "HTCPP_MAX_REQUEST_HEADER_SIZE");
         loadIntVar(config.maxRequestBodySize, "HTCPP_MAX_REQUEST_BODY_SIZE");
-        loadBoolVar(config.useTls, "HTCPP_USE_TLS");
+        config.certPath = getEnv("HTCPP_CERT_PATH");
+        config.keyPath = getEnv("HTCPP_KEY_PATH");
         loadBoolVar(config.accesLog, "HTCPP_ACCESS_LOG");
         loadBoolVar(config.debugLogging, "HTCPP_DEBUG_LOGGING");
         loadAddressVar(config.listenAddress, "HTCPP_LISTEN_ADDRESS");

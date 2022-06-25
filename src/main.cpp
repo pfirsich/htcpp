@@ -4,6 +4,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include <clipp.hpp>
+
 #include "config.hpp"
 #include "fd.hpp"
 #include "filecache.hpp"
@@ -32,11 +34,99 @@ static std::string getMimeType(std::string fileExt)
     return it->second;
 }
 
-int main()
+struct IpPort {
+    std::optional<uint32_t> ip;
+    uint16_t port;
+
+    static std::optional<IpPort> parse(std::string_view str)
+    {
+        auto ipStr = std::string_view();
+        auto portStr = std::string_view();
+
+        const auto colon = str.find(':');
+        if (colon == std::string::npos) {
+            portStr = str;
+        } else {
+            ipStr = str.substr(0, colon);
+            portStr = str.substr(colon + 1);
+        }
+
+        std::optional<uint32_t> ip;
+        if (!ipStr.empty()) {
+            ip = parseIpAddress(std::string(ipStr));
+            if (!ip) {
+                return std::nullopt;
+            }
+        }
+
+        const auto port = parseInt<uint16_t>(portStr);
+        if (!port) {
+            return std::nullopt;
+        }
+
+        return IpPort { ip, *port };
+    }
+};
+
+template <>
+struct clipp::Value<IpPort> {
+    static constexpr std::string_view typeName = "[address:]port";
+
+    static std::optional<IpPort> parse(std::string_view str)
+    {
+        return IpPort::parse(str);
+    }
+};
+
+struct Args : clipp::ArgsBase {
+    std::optional<IpPort> listen;
+    bool debug;
+    // bool followSymlinks;
+#ifdef TLS_SUPPORT_ENABLED
+    std::vector<std::string> tls;
+#endif
+    // bool browse;
+    // std::string source = ".";
+
+    void args()
+    {
+        flag(listen, "listen", 'l').valueNames("IPPORT").help("ip:port or port");
+        flag(debug, "debug").help("Enable debug logging");
+        // flag(followSymlinks, "follow", 'f').help("Follow symlinks");
+#ifdef TLS_SUPPORT_ENABLED
+        flag(tls, "tls").num(2).valueNames("CERT", "KEY");
+#endif
+        // flag(browse, "browse", 'b');
+        // positional(source, "source").optional();
+    }
+};
+
+int main(int argc, char** argv)
 {
-    const auto& config = Config::get();
+    auto parser = clipp::Parser(argv[0]);
+    const Args args = parser.parse<Args>(argc, argv).value();
+
+    auto& config = Config::get();
+
+    if (args.listen) {
+        if (args.listen->ip) {
+            config.listenAddress = *args.listen->ip;
+        }
+        config.listenPort = args.listen->port;
+    }
+
+#ifdef TLS_SUPPORT_ENABLED
+    if (!args.tls.empty()) {
+        config.certPath = args.tls[0];
+        config.keyPath = args.tls[1];
+    }
+#endif
+
+    config.debugLogging = config.debugLogging || args.debug;
+
     slog::init(config.debugLogging ? slog::Severity::Debug : slog::Severity::Info);
-    slog::info("Use TLS: ", config.useTls);
+    slog::info("Certificate Path: ", config.certPath.value_or("<none>"));
+    slog::info("Private Key Path: ", config.keyPath.value_or("<none>"));
     slog::info("Listen Port: ", config.listenPort);
     slog::info("Listen Address: ", ::inet_ntoa(::in_addr { config.listenAddress }));
     slog::info("Access Log: ", config.accesLog);
@@ -118,7 +208,7 @@ int main()
         return Response(ss.str(), "text/plain");
     });
 
-    if (config.useTls) {
+    if (config.certPath && config.keyPath) {
 #ifdef TLS_SUPPORT_ENABLED
         if (!SslContextManager::instance().init("cert.pem", "key.pem")) {
             return 1;
