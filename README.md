@@ -17,7 +17,6 @@ Install [meson](https://mesonbuild.com/).
 Execute the following commands:
 ```shell
 meson setup build/
-meson subprojects update
 meson compile -C build
 ```
 
