@@ -316,6 +316,14 @@ std::string Response::string(std::string_view httpVersion) const
     s.append(std::to_string(static_cast<int>(status)));
     // The reason phrase may be empty, but the separator space is not optional
     s.append(" \r\n");
+
+    // I think it's useful to provide this header so clients can work around issues,
+    // but I avoid the version, because this might expose too much information (like your server
+    // being outdated or your patch cycle). E.g. if the server version bumps only on thursdays, that
+    // could be valuable information.
+    // If I add a reverse-proxy mode, I must not add this.
+    s.append("Server: htcpp\r\n");
+
     for (const auto& [name, value] : headerEntries) {
         if (ciEqual(name, "Content-Length")) {
             continue;
