@@ -25,14 +25,14 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 
 ## To Do
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
+* Config files and possibility to host multiple websites
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
     - Respond with 429/503 or start refusing connections if overloaded (likely both, but at different levels?)
     - Add concurrency limit (max number of concurrent connections)
     - Read timeout (see above)
 * certbot integration (includes reloading certificates if they are renewed). I am not sure what exactly that entails right now, but I know that I want it to work.
-* Docker image
-    - Optionally include certbot
+* Make it work with certbot: If I implement automatic reloading of certificates and implement multiple websites, so I can host .well-known/acme-challenge on port 80, then I think the rest is just configuration.
 * Support HEAD requests for file server
 * [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since] for file server
 * IPv6
@@ -41,6 +41,7 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 * Partial Content ([Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) for file server
     - Also add [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)[If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match) support
 * Directory Listings
+* (After Config) Header-Editing Rules (Add, Replace, Remove Headers)
 * Customizable access log: Have the option to include some request headers, like Referer or User-Agent
 
 ## Won't Do (for now?)
