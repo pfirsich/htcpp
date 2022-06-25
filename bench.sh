@@ -14,9 +14,8 @@ http_pid=$!
 HTCPP_ACCESS_LOG=0 build/htcpp --listen 127.0.0.1:6970 --tls cert.pem key.pem &
 https_pid=$!
 
-echo "Warmup" # file cache etc.
-hey "http://localhost:6969/$url" > /dev/null
-hey "https://localhost:6970/$url" > /dev/null
+echo "Warmup HTTP" # file cache, grow some buffers, allocate things
+hey -c "$concurrency" -z 3s "http://localhost:6969/$url" > /dev/null
 
 echo "http ${concurrency}"
 outfile="$outdir/http_c${concurrency}_${duration}"
@@ -27,6 +26,9 @@ echo "http ${concurrency} close"
 outfile="$outdir/http_c${concurrency}_${duration}_close"
 hey -c "$concurrency" -z "$duration" -disable-keepalive "http://localhost:6969/$url" > "$outfile"
 grep "Requests/sec" "$outfile"
+
+echo "Warmup HTTPS"
+hey -c "$concurrency" -z 3s "https://localhost:6970/$url" > /dev/null
 
 echo "https ${concurrency}"
 outfile="$outdir/https_c${concurrency}_${duration}"
