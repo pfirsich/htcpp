@@ -1,6 +1,6 @@
-# httpserver
+# htcpp
 
-This is a HTTP/1.1 server built with [io_uring](https://en.wikipedia.org/wiki/Io_uring). It's single-threaded and all network IO and inotify usage is asynchronous.
+A HTTP/1.1 server using [io_uring](https://en.wikipedia.org/wiki/Io_uring) built with C++17. It's single-threaded and all network IO and inotify usage is asynchronous.
 
 Currently it has the following features:
 * Handles basic HTTP/1.1 requests, parses them and responds
@@ -25,7 +25,6 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 
 ## To Do
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
-* Find a name
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
     - Respond with 429/503 or start refusing connections if overloaded (likely both, but at different levels?)

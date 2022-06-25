@@ -1,4 +1,4 @@
-project('httpserver', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++17'])
+project('htcpp', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++17'])
 
 liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
 threads_dep = dependency('threads')
@@ -27,6 +27,6 @@ if openssl_dep.found()
   flags += '-DTLS_SUPPORT_ENABLED'
 endif
 
-executable('httpserver', src, include_directories : ['src'],
+executable('htcpp', src, include_directories : ['src'],
   cpp_args : flags,
   dependencies : [threads_dep, liburingpp_dep, openssl_dep])

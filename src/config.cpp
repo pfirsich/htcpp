@@ -79,18 +79,18 @@ Config& Config::get()
     static Config config;
     static bool initialized = false;
     if (!initialized) {
-        loadIntVar(config.listenPort, "URHTS_LISTEN_PORT");
-        loadIntVar(config.listenBacklog, "URHTS_LISTEN_BACKLOG");
+        loadIntVar(config.listenPort, "HTCPP_LISTEN_PORT");
+        loadIntVar(config.listenBacklog, "HTCPP_LISTEN_BACKLOG");
         // If this is not a power of two, it will crash anyways
-        loadIntVar(config.ioQueueSize, "URHTS_IO_QUEUE_SIZE", 1ul, 4096ul);
-        loadIntVar(config.fullReadTimeoutMs, "URHTS_FULL_READ_TIMEOUT_MS");
-        loadIntVar(config.maxUrlLength, "URHTS_MAX_URL_LENGTH");
-        loadIntVar(config.maxRequestHeaderSize, "URHTS_MAX_REQUEST_HEADER_SIZE");
-        loadIntVar(config.maxRequestBodySize, "URHTS_MAX_REQUEST_BODY_SIZE");
-        loadBoolVar(config.useTls, "URHTS_USE_TLS");
-        loadBoolVar(config.accesLog, "URHTS_ACCESS_LOG");
-        loadBoolVar(config.debugLogging, "URHTS_DEBUG_LOGGING");
-        loadAddressVar(config.listenAddress, "URHTS_LISTEN_ADDRESS");
+        loadIntVar(config.ioQueueSize, "HTCPP_IO_QUEUE_SIZE", 1ul, 4096ul);
+        loadIntVar(config.fullReadTimeoutMs, "HTCPP_FULL_READ_TIMEOUT_MS");
+        loadIntVar(config.maxUrlLength, "HTCPP_MAX_URL_LENGTH");
+        loadIntVar(config.maxRequestHeaderSize, "HTCPP_MAX_REQUEST_HEADER_SIZE");
+        loadIntVar(config.maxRequestBodySize, "HTCPP_MAX_REQUEST_BODY_SIZE");
+        loadBoolVar(config.useTls, "HTCPP_USE_TLS");
+        loadBoolVar(config.accesLog, "HTCPP_ACCESS_LOG");
+        loadBoolVar(config.debugLogging, "HTCPP_DEBUG_LOGGING");
+        loadAddressVar(config.listenAddress, "HTCPP_LISTEN_ADDRESS");
     }
     initialized = true;
     return config;
