@@ -3,6 +3,7 @@
 #include <time.h>
 
 #include "log.hpp"
+#include "metrics.hpp"
 #include "util.hpp"
 
 void IoQueue::setRelativeTimeout(Timespec* ts, uint64_t milliseconds)
@@ -103,6 +104,7 @@ void IoQueue::run()
 
         if (cqe->user_data != Ignore) {
             assert(completionHandlers_.contains(cqe->user_data));
+            Metrics::get().ioQueueOpsQueued.labels().dec();
             auto ch = std::move(completionHandlers_[cqe->user_data]);
             ch(cqe);
             completionHandlers_.remove(cqe->user_data);
@@ -140,6 +142,7 @@ bool IoQueue::addSqe(io_uring_sqe* sqe, Callback cb)
         slog::warning("io_uring full");
         return false;
     }
+    Metrics::get().ioQueueOpsQueued.labels().inc();
     sqe->user_data = addHandler(std::move(cb));
     return true;
 }

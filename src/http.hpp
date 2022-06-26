@@ -21,6 +21,7 @@ enum class Method {
 };
 
 std::optional<Method> parseMethod(std::string_view method);
+std::string toString(Method method);
 
 enum class StatusCode {
     // 1xx = Informational Response

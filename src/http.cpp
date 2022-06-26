@@ -27,8 +27,32 @@ std::optional<Method> parseMethod(std::string_view method)
     } else if (method == "PATCH") {
         return Method::Patch;
     }
-
     return std::nullopt;
+}
+
+std::string toString(Method method)
+{
+    if (method == Method::Get) {
+        return "GET";
+    } else if (method == Method::Head) {
+        return "HEAD";
+    } else if (method == Method::Post) {
+        return "POST";
+    } else if (method == Method::Put) {
+        return "PUT";
+    } else if (method == Method::Delete) {
+        return "DELETE";
+    } else if (method == Method::Connect) {
+        return "CONNECT";
+    } else if (method == Method::Options) {
+        return "OPTIONS";
+    } else if (method == Method::Trace) {
+        return "TRACE";
+    } else if (method == Method::Patch) {
+        return "PATCH";
+    } else {
+        return "invalid";
+    }
 }
 
 namespace {

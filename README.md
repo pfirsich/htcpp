@@ -8,6 +8,7 @@ Currently it has the following features:
 * A cool URL [router](src/router.hpp) like all the popular web frameworks (see example in [main.cpp](src/main.cpp))
 * FileCache/FileWatcher to serve files and automatically reload them (using inotify)
 * TLS
+* Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/) (at `/metrics` - configurable later)
 
 It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
 
@@ -25,6 +26,8 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 ## To Do
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
 * Config files and possibility to host multiple websites
+* Reload certificate/private key when they change on disk
+* Add a mechanism that dispatches work to a thread pool and notifies the IO queue via an eventfd, so I can do e.g. certificate loading and process metrics asynchronously
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
     - Respond with 429/503 or start refusing connections if overloaded (likely both, but at different levels?)

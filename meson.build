@@ -1,9 +1,12 @@
 project('htcpp', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++17'])
 
-liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
-clipp_dep = dependency('clipp', fallback : ['clipp', 'clipp_dep'])
 threads_dep = dependency('threads')
 openssl_dep = dependency('openssl', required : false)
+
+clipp_dep = dependency('clipp', fallback : ['clipp', 'clipp_dep'])
+cpprom_dep = dependency('cpprom', fallback : ['cpprom', 'cpprom_dep'], default_options : [ 'single_threaded=true' ])
+joml_cpp_dep = dependency('joml-cpp', fallback : ['joml-cpp', 'joml_cpp_dep'])
+liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
 
 flags = []
 
@@ -16,9 +19,9 @@ src = [
   'src/ioqueue.cpp',
   'src/log.cpp',
   'src/main.cpp',
+  'src/metrics.cpp',
   'src/router.cpp',
   'src/server.cpp',
-  'src/stats.cpp',
   'src/string.cpp',
   'src/util.cpp',
 ]
@@ -33,6 +36,9 @@ executable('htcpp', src, include_directories : ['src'],
   dependencies : [
     threads_dep,
     openssl_dep,
-    liburingpp_dep,
+
     clipp_dep,
+    cpprom_dep,
+    joml_cpp_dep,
+    liburingpp_dep,
   ])

@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 
 #include <clipp.hpp>
+#include <cpprom/cpprom.hpp>
 
 #include "config.hpp"
 #include "fd.hpp"
@@ -195,17 +196,8 @@ int main(int argc, char** argv)
             return Response(*f, getMimeType(std::string(ext)));
         });
 
-    router.route("/status", [](const Request&, const Router::RouteParams&) -> Response {
-        std::stringstream ss;
-        const auto& stats = Stats::get();
-        ss << "connAccepted: " << stats.connAccepted << "\n";
-        ss << "connDropped: " << stats.connDropped << "\n";
-        ss << "connActive: " << stats.connActive << "\n";
-        ss << "recvError: " << stats.recvError << "\n";
-        ss << "sendError: " << stats.sendError << "\n";
-        ss << "reqReceived: " << stats.reqReceived << "\n";
-        ss << "reqError: " << stats.reqError << "\n";
-        return Response(ss.str(), "text/plain");
+    router.route("/metrics", [](const Request&, const Router::RouteParams&) -> Response {
+        return Response(cpprom::Registry::getDefault().serialize(), "text/plain; version=0.0.4");
     });
 
     if (config.certPath && config.keyPath) {

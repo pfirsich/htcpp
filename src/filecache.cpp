@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "log.hpp"
+#include "metrics.hpp"
 
 FileCache::FileCache(IoQueue& io)
     : io_(io)
@@ -16,6 +17,7 @@ FileCache::FileCache(IoQueue& io)
 // If std::optional<T&> was a thing, I would return that instead.
 const std::string* FileCache::get(const std::string& path)
 {
+    Metrics::get().fileCacheQueries.labels(path).inc();
     auto it = files_.find(path);
     if (it == files_.end()) {
         it = files_.emplace(path, File { path }).first;
@@ -30,6 +32,7 @@ const std::string* FileCache::get(const std::string& path)
     }
 
     if (!it->second.contents) {
+        Metrics::get().fileCacheFailures.labels(path).inc();
         return nullptr;
     }
     return &*it->second.contents;
@@ -37,6 +40,7 @@ const std::string* FileCache::get(const std::string& path)
 
 std::optional<std::string> FileCache::readFile(const std::string& path)
 {
+    const auto timeHandle = Metrics::get().fileReadDuration.labels(path).time();
     auto f = std::unique_ptr<FILE, decltype(&std::fclose)>(
         std::fopen(path.c_str(), "rb"), &std::fclose);
     if (!f) {

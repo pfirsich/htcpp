@@ -9,7 +9,7 @@
 #include "http.hpp"
 #include "ioqueue.hpp"
 #include "log.hpp"
-#include "stats.hpp"
+#include "metrics.hpp"
 #include "util.hpp"
 
 #include <arpa/inet.h>
@@ -68,16 +68,13 @@ private:
             : connection_(io, fd)
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
+            , trackInProgressHandle_(Metrics::get().connActive.labels().trackInProgress())
         {
             requestHeaderBuffer_.reserve(Config::get().maxRequestHeaderSize);
             requestBodyBuffer_.reserve(Config::get().maxRequestBodySize);
-            Stats::get().connActive++;
         }
 
-        ~Session()
-        {
-            Stats::get().connActive--;
-        }
+        ~Session() = default;
 
         Session(const Session&) = default;
         Session(Session&&) = default;
@@ -90,6 +87,7 @@ private:
             // because shared_from_this must not be called until the shared_ptr constructor has
             // completed. You would get a bad_weak_ptr exception in shared_from_this if you called
             // it from the Session constructor.
+            requestStart_ = cpprom::now();
             readRequest();
         }
 
@@ -118,7 +116,7 @@ private:
                 [this, self = this->shared_from_this(), recvLen](
                     std::error_code ec, int readBytes) {
                     if (ec) {
-                        Stats::get().recvError++;
+                        Metrics::get().recvErrors.labels(ec.message()).inc();
                         slog::error("Error in recv (headers): ", ec.message());
                         // Error might be ECONNRESET, EPIPE (from send) or others, where we just
                         // want to close. There might be errors, where shutdown is better, but
@@ -138,7 +136,7 @@ private:
                     auto request = Request::parse(requestHeaderBuffer_);
                     if (!request) {
                         accessLog("INVALID REQUEST", StatusCode::BadRequest, 0);
-                        Stats::get().reqError++;
+                        Metrics::get().reqErrors.labels("parse error").inc();
                         respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                         return;
                     }
@@ -150,14 +148,14 @@ private:
                         if (!length) {
                             accessLog(
                                 "INVALID REQUEST (Content-Length)", StatusCode::BadRequest, 0);
-                            Stats::get().reqError++;
+                            Metrics::get().reqErrors.labels("invalid length").inc();
                             respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                             return;
                         }
 
                         if (*length > Config::get().maxRequestBodySize) {
                             accessLog("INVALID REQUEST (body size)", StatusCode::BadRequest, 0);
-                            Stats::get().reqError++;
+                            Metrics::get().reqErrors.labels("body too large").inc();
                             respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                         } else if (request_.body.size() < *length) {
                             requestBodyBuffer_.append(request_.body);
@@ -184,7 +182,7 @@ private:
                 [this, self = this->shared_from_this(), recvLen, contentLength](
                     std::error_code ec, int readBytes) {
                     if (ec) {
-                        Stats::get().recvError++;
+                        Metrics::get().recvErrors.labels(ec.message()).inc();
                         slog::error("Error in recv (body): ", ec.message());
                         connection_.close();
                         return;
@@ -228,10 +226,16 @@ private:
 
         void processRequest(const Request& request)
         {
-            Stats::get().reqReceived++;
-            const auto response = handler_(request);
-            accessLog(request.requestLine, response.status, response.body.size());
-            respond(response.string(request.version), getKeepAlive(request));
+            Metrics::get().reqsTotal.labels(toString(request.method), request.url.path).inc();
+            Metrics::get()
+                .reqHeaderSize.labels(toString(request.method), request.url.path)
+                .observe(requestHeaderBuffer_.size());
+            Metrics::get()
+                .reqBodySize.labels(toString(request.method), request.url.path)
+                .observe(requestBodyBuffer_.size());
+            response_ = handler_(request);
+            accessLog(request.requestLine, response_.status, response_.body.size());
+            respond(response_.string(request.version), getKeepAlive(request));
         }
 
         void respond(std::string response, bool keepAlive)
@@ -245,11 +249,19 @@ private:
             connection_.send(responseBuffer_.data(), responseBuffer_.size(),
                 [this, self = this->shared_from_this(), keepAlive, size = responseBuffer_.size()](
                     std::error_code ec, int sentBytes) {
+                    const auto method = toString(request_.method);
+                    const auto status = std::to_string(static_cast<int>(response_.status));
+                    Metrics::get()
+                        .reqDuration.labels(method, request_.url.path)
+                        .observe(cpprom::now() - requestStart_);
+                    Metrics::get().respTotal.labels(method, request_.url.path, status).inc();
+                    Metrics::get().respSize.labels(method, request_.url.path, status).observe(size);
+
                     if (ec) {
                         // I think there are no errors, where we want to shutdown.
                         // Note that ec could be an error that can not be returned by ::send,
                         // because with SSL it might do ::recv as part of Connection::send.
-                        Stats::get().sendError++;
+                        Metrics::get().sendErrors.labels(ec.message()).inc();
                         slog::error("Error in send: ", ec.message());
                         connection_.close();
                         return;
@@ -300,7 +312,10 @@ private:
         std::string requestBodyBuffer_;
         std::string responseBuffer_;
         Request request_;
+        Response response_;
         IoQueue::Timespec readTimeout_;
+        cpprom::Gauge::TrackInProgressHandle trackInProgressHandle_;
+        double requestStart_;
     };
 
     void accept()
@@ -328,8 +343,10 @@ private:
     {
         if (ec) {
             slog::error("Error in accept: ", ec.message());
+            Metrics::get().acceptErrors.labels(ec.message()).inc();
         } else {
-            Stats::get().connAccepted++;
+            static auto& connAccepted = Metrics::get().connAccepted.labels();
+            connAccepted.inc();
             const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
             std::make_shared<Session>(io_, fd, handler_, addr)->start();
         }
