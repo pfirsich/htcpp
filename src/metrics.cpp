@@ -14,7 +14,8 @@ Metrics& Metrics::get()
         reg.counter("htcpp_connections_dropped", {}, "Number of connections dropped"),
         reg.gauge("htcpp_connections_active", {}, "Number of active connections"),
 
-        reg.counter("htcpp_requests_total", { "method", "url" }, "Number of received requests"),
+        reg.counter(
+            "htcpp_requests_total", { "method", "url", "status" }, "Number of received requests"),
         reg.histogram("htcpp_request_header_size_bytes", { "method", "url" }, sizeBuckets,
             "Request header size"),
         reg.histogram(

@@ -226,7 +226,6 @@ private:
 
         void processRequest(const Request& request)
         {
-            Metrics::get().reqsTotal.labels(toString(request.method), request.url.path).inc();
             Metrics::get()
                 .reqHeaderSize.labels(toString(request.method), request.url.path)
                 .observe(requestHeaderBuffer_.size());
@@ -234,6 +233,10 @@ private:
                 .reqBodySize.labels(toString(request.method), request.url.path)
                 .observe(requestBodyBuffer_.size());
             response_ = handler_(request);
+            const auto status = std::to_string(static_cast<int>(response_.status));
+            Metrics::get()
+                .reqsTotal.labels(toString(request.method), request.url.path, status)
+                .inc();
             accessLog(request.requestLine, response_.status, response_.body.size());
             respond(response_.string(request.version), getKeepAlive(request));
         }
