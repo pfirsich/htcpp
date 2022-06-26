@@ -5,7 +5,6 @@ openssl_dep = dependency('openssl', required : false)
 
 clipp_dep = dependency('clipp', fallback : ['clipp', 'clipp_dep'])
 cpprom_dep = dependency('cpprom', fallback : ['cpprom', 'cpprom_dep'], default_options : [ 'single_threaded=true' ])
-joml_cpp_dep = dependency('joml-cpp', fallback : ['joml-cpp', 'joml_cpp_dep'])
 liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
 
 flags = []
@@ -39,6 +38,5 @@ executable('htcpp', src, include_directories : ['src'],
 
     clipp_dep,
     cpprom_dep,
-    joml_cpp_dep,
     liburingpp_dep,
   ])
