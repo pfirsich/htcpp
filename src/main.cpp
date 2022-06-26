@@ -15,6 +15,7 @@
 #include "log.hpp"
 #include "router.hpp"
 #include "server.hpp"
+#include "tcp.hpp"
 
 #ifdef TLS_SUPPORT_ENABLED
 #include "ssl.hpp"

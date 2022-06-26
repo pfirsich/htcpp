@@ -22,6 +22,7 @@ src = [
   'src/router.cpp',
   'src/server.cpp',
   'src/string.cpp',
+  'src/tcp.cpp',
   'src/util.cpp',
 ]
 

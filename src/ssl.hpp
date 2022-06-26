@@ -5,7 +5,7 @@
 
 #include <openssl/ssl.h>
 
-#include "server.hpp"
+#include "tcp.hpp"
 
 // Must be at least 1.1.1
 static_assert(OPENSSL_VERSION_NUMBER >= 10101000);

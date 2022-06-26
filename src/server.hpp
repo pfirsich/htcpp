@@ -18,22 +18,6 @@
 
 Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024);
 
-class TcpConnection {
-public:
-    TcpConnection(IoQueue& io, int fd);
-
-    void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);
-    void recv(void* buffer, size_t len, IoQueue::Timespec* timeout, bool timeoutIsAbsolute,
-        IoQueue::HandlerEcRes handler);
-    void send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler);
-    void shutdown(IoQueue::HandlerEc handler);
-    void close();
-
-protected:
-    IoQueue& io_;
-    int fd_;
-};
-
 // Maybe I should put the function definitions into server.cpp and instantiate the template
 // explicitly for TcpConnection and SslConnection, but I would have to do that in server.cpp
 // (meaning I would have to include ssl.hpp), which I don't really like right now.
