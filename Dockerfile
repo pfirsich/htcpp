@@ -12,7 +12,12 @@ COPY src /build/src/
 COPY meson.build /build/
 COPY subprojects /build/subprojects/
 RUN meson setup build/
-RUN meson configure -Dclipp:default_library=static -Dliburingpp:default_library=static build/
+RUN meson configure \
+  -Dbuildtype=release \
+  -Db_lto=true \
+  -Dclipp:default_library=static \
+  -Dliburingpp:default_library=static \
+  build/
 RUN meson compile -C build/
 
 FROM ubuntu:22.04 AS runtime
