@@ -1,12 +1,15 @@
 #pragma once
 
 #include <functional>
+#include <future>
 #include <limits>
 #include <system_error>
+#include <thread>
 
 #include <netinet/in.h>
 
 #include "iouring.hpp"
+#include "log.hpp"
 #include "slotmap.hpp"
 
 class IoQueue {
@@ -49,6 +52,66 @@ public:
     bool shutdown(int fd, int how, HandlerEc cb);
 
     bool poll(int fd, short events, HandlerEcRes cb);
+
+    class NotifyHandle {
+    public:
+        NotifyHandle(int fd);
+        ~NotifyHandle() = default;
+        NotifyHandle(const NotifyHandle&) = delete;
+        NotifyHandle& operator=(const NotifyHandle&) = delete;
+        NotifyHandle(NotifyHandle&&) = default;
+        NotifyHandle& operator=(NotifyHandle&&) = default;
+
+        // wait might fail, in which case this will return false
+        explicit operator bool() const;
+
+        // This will do a write on an eventfd, but it will not do it asynchronously, because it was
+        // introduced to be used from other threads (async below), which would require IoQueue to be
+        // thread-safe which it is not (at all).
+        // This means that if you do it from the thread that processes the IoQueue (the main
+        // thread), you need to be aware that this might block (unlikely though).
+        // Also this function must be called exactly once. If it is not called, the async read on
+        // the eventfd will never terminate. If you call it more than once, there is no read queued
+        // up, so this function will abort.
+        void notify(uint64_t value = 1);
+
+    private:
+        int fd_;
+    };
+
+    // This is a wrapper of a subset of eventfd functionality.
+    // The value passed to NotifyHandle::notify will be passed to the handler cb.
+    NotifyHandle wait(std::function<void(std::error_code, uint64_t)> cb);
+
+    template <typename Result>
+    bool async(std::function<Result()> func, std::function<void(std::error_code, Result&&)> cb)
+    {
+        // std::function content needs to be copyable :)
+        // Only a minimal amount of hair has been ripped out of my skull because of this.
+        auto prom = std::make_shared<std::promise<Result>>();
+        auto fut = std::make_shared<std::future<Result>>(prom->get_future());
+        auto handle = wait(
+            [fut = std::move(fut), cb = std::move(cb)](std::error_code ec, uint64_t) mutable {
+                if (ec) {
+                    cb(ec, Result());
+                } else {
+                    cb(std::error_code(), std::move(fut->get()));
+                }
+            });
+        if (!handle) {
+            return false;
+        }
+
+        // Simply detaching a thread is really not very clean, but it's easy and enough for my
+        // current use cases.
+        std::thread t(
+            [func = std::move(func), prom = std::move(prom), handle = std::move(handle)]() mutable {
+                prom->set_value(func());
+                handle.notify();
+            });
+        t.detach();
+        return true;
+    }
 
     void run();
 

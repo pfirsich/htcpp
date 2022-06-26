@@ -31,6 +31,7 @@ namespace detail {
 
     // This is thread-safe. Even though the whole program is single-threaded so far,
     // I don't want to have to worry about logging if I ever decide to make it multi-threaded.
+    // EDIT: This decision turned out to be smart.
     template <typename... Args>
     void log(Severity severity, std::string_view severityStr, Args&&... args)
     {

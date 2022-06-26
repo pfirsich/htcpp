@@ -205,8 +205,8 @@ int main(int argc, char** argv)
 
 #ifdef TLS_SUPPORT_ENABLED
     if (config.certPath && config.keyPath) {
-        const auto factory = SslConnectionFactory(*config.certPath, *config.keyPath);
-        if (!factory.contextManager.getCurrentContext()) {
+        auto factory = SslConnectionFactory(io, *config.certPath, *config.keyPath);
+        if (!factory.contextManager->getCurrentContext()) {
             return 1;
         }
 

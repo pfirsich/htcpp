@@ -59,6 +59,19 @@ std::string sslErrorToString(int sslError)
     }
 }
 
+std::optional<SslContext> SslContext::load(
+    const std::string& certChainPath, const std::string& keyPath)
+{
+    auto ctx = SslContext();
+    if (!static_cast<SSL_CTX*>(ctx)) {
+        return std::nullopt;
+    }
+    if (!ctx.init(certChainPath, keyPath)) {
+        return std::nullopt;
+    }
+    return ctx;
+}
+
 // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_new.html
 // TLS_method is the only one that should be used anymore
 SslContext::SslContext()
@@ -76,6 +89,19 @@ SslContext::SslContext()
 SslContext::~SslContext()
 {
     SSL_CTX_free(ctx_);
+}
+
+SslContext::SslContext(SslContext&& other)
+    : ctx_(other.ctx_)
+{
+    other.ctx_ = nullptr;
+}
+
+SslContext& SslContext::operator=(SslContext&& other)
+{
+    ctx_ = other.ctx_;
+    other.ctx_ = nullptr;
+    return *this;
 }
 
 bool SslContext::init(const std::string& certChainPath, const std::string& keyPath)
@@ -104,11 +130,35 @@ SslContext::operator SSL_CTX*()
     return ctx_;
 }
 
-SslContextManager::SslContextManager(std::string certChainPath, std::string keyPath)
+SslContextManager::SslContextManager(IoQueue& io, std::string certChainPath, std::string keyPath)
     : certChainPath_(std::move(certChainPath))
     , keyPath_(std::move(keyPath))
+    , io_(io)
+    , fileWatcher_(io)
 {
     updateContext();
+    // TODO: Cancel on destruction and take ownership of SslContextManager
+    // for now we assume a SslContextManager lives forever
+    fileWatcher_.watch(certChainPath_, [this](std::string_view) { onFileChanged(); });
+    fileWatcher_.watch(keyPath_, [this](std::string_view) { onFileChanged(); });
+}
+
+void SslContextManager::onFileChanged()
+{
+    // TODO: Introduce some delay so we don't reload the certificate twice, when both the
+    // certificate chain file and the private key changed shortly after another.
+    io_.async<std::optional<SslContext>>(
+        [this]() -> std::optional<SslContext> {
+            return SslContext::load(certChainPath_, keyPath_);
+        },
+        [this](std::error_code ec, std::optional<SslContext>&& context) -> void {
+            if (ec) {
+                slog::error("Error during certificate reload: ", ec.message());
+            } else if (context) {
+                currentContext_ = std::make_shared<SslContext>(std::move(*context));
+            }
+            // If context is empty, we already logged a message
+        });
 }
 
 std::shared_ptr<SslContext> SslContextManager::getCurrentContext() const
@@ -118,14 +168,11 @@ std::shared_ptr<SslContext> SslContextManager::getCurrentContext() const
 
 void SslContextManager::updateContext()
 {
-    const auto ctx = std::make_shared<SslContext>();
-    if (!static_cast<SSL_CTX*>(*ctx)) {
+    auto ctx = SslContext::load(certChainPath_, keyPath_);
+    if (!ctx) {
         return;
     }
-    if (!ctx->init(certChainPath_, keyPath_)) {
-        return;
-    }
-    currentContext_ = std::move(ctx);
+    currentContext_ = std::make_shared<SslContext>(std::move(*ctx));
 }
 
 const char* OpenSslErrorCategory::name() const noexcept
@@ -352,7 +399,9 @@ template void SslConnection::performSslOperation<SslOperation::Write>(
 template void SslConnection::performSslOperation<SslOperation::Shutdown>(
     void* buffer, size_t length, IoQueue::HandlerEcRes handler);
 
-SslConnectionFactory::SslConnectionFactory(std::string certChainPath, std::string keyPath)
-    : contextManager(std::move(certChainPath), std::move(keyPath))
+SslConnectionFactory::SslConnectionFactory(
+    IoQueue& io, std::string certChainPath, std::string keyPath)
+    : contextManager(
+        std::make_unique<SslContextManager>(io, std::move(certChainPath), std::move(keyPath)))
 {
 }

@@ -5,6 +5,7 @@
 
 #include <openssl/ssl.h>
 
+#include "filewatcher.hpp"
 #include "tcp.hpp"
 
 // Must be at least 1.1.1
@@ -23,8 +24,15 @@ std::string sslErrorToString(int sslError);
 
 class SslContext {
 public:
+    static std::optional<SslContext> load(
+        const std::string& certChainPath, const std::string& keyPath);
+
     SslContext();
     ~SslContext();
+    SslContext(SslContext&) = delete;
+    SslContext& operator=(SslContext&) = delete;
+    SslContext(SslContext&&);
+    SslContext& operator=(SslContext&&);
 
     // The cert chain file and key file must be PEM files without a password.
     // This is enough because I can test with it and it is also what certbot spits out.
@@ -40,16 +48,20 @@ private:
 // Later this thing should recreate contexts, when the certificates get renewed
 class SslContextManager {
 public:
-    SslContextManager(std::string certChainPath, std::string keyPath);
+    SslContextManager(IoQueue& io, std::string certChainPath, std::string keyPath);
 
     std::shared_ptr<SslContext> getCurrentContext() const;
 
 private:
     void updateContext();
 
+    void onFileChanged();
+
     std::string certChainPath_;
     std::string keyPath_;
     std::shared_ptr<SslContext> currentContext_;
+    IoQueue& io_;
+    FileWatcher fileWatcher_;
 };
 
 struct OpenSslErrorCategory : public std::error_category {
@@ -115,12 +127,13 @@ private:
 struct SslConnectionFactory {
     using Connection = SslConnection;
 
-    SslContextManager contextManager;
+    // SslContextManager is not movable, because FileWatcher isn't (for good reason)
+    std::unique_ptr<SslContextManager> contextManager;
 
-    SslConnectionFactory(std::string certChainPath, std::string keyPath);
+    SslConnectionFactory(IoQueue& io, std::string certChainPath, std::string keyPath);
 
     Connection create(IoQueue& io, int fd)
     {
-        return Connection(io, fd, contextManager.getCurrentContext());
+        return Connection(io, fd, contextManager->getCurrentContext());
     }
 };
