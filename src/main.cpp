@@ -127,8 +127,10 @@ int main(int argc, char** argv)
     config.debugLogging = config.debugLogging || args.debug;
 
     slog::init(config.debugLogging ? slog::Severity::Debug : slog::Severity::Info);
+#ifdef TLS_SUPPORT_ENABLED
     slog::info("Certificate Path: ", config.certPath.value_or("<none>"));
     slog::info("Private Key Path: ", config.keyPath.value_or("<none>"));
+#endif
     slog::info("Listen Port: ", config.listenPort);
     slog::info("Listen Address: ", ::inet_ntoa(::in_addr { config.listenAddress }));
     slog::info("Access Log: ", config.accesLog);
@@ -201,22 +203,19 @@ int main(int argc, char** argv)
         return Response(cpprom::Registry::getDefault().serialize(), "text/plain; version=0.0.4");
     });
 
-    if (config.certPath && config.keyPath) {
 #ifdef TLS_SUPPORT_ENABLED
-        if (!SslContextManager::instance().init("cert.pem", "key.pem")) {
+    if (config.certPath && config.keyPath) {
+        if (!SslContextManager::instance().init(*config.certPath, *config.keyPath)) {
             return 1;
         }
 
         Server<SslConnection> server(io, router);
         server.start();
-#else
-        slog::fatal("Not compiled with TLS support");
-        return 1;
-#endif
-    } else {
-        Server<TcpConnection> server(io, router);
-        server.start();
+        return 0;
     }
+#endif
 
+    Server<TcpConnection> server(io, router);
+    server.start();
     return 0;
 }

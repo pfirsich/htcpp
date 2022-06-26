@@ -77,6 +77,10 @@ Config& Config::get()
     static Config config;
     static bool initialized = false;
     if (!initialized) {
+#ifdef TLS_SUPPORT_ENABLED
+        config.certPath = getEnv("HTCPP_CERT_PATH");
+        config.keyPath = getEnv("HTCPP_KEY_PATH");
+#endif
         loadIntVar(config.listenPort, "HTCPP_LISTEN_PORT");
         loadIntVar(config.listenBacklog, "HTCPP_LISTEN_BACKLOG");
         // If this is not a power of two, it will crash anyways
@@ -85,8 +89,6 @@ Config& Config::get()
         loadIntVar(config.maxUrlLength, "HTCPP_MAX_URL_LENGTH");
         loadIntVar(config.maxRequestHeaderSize, "HTCPP_MAX_REQUEST_HEADER_SIZE");
         loadIntVar(config.maxRequestBodySize, "HTCPP_MAX_REQUEST_BODY_SIZE");
-        config.certPath = getEnv("HTCPP_CERT_PATH");
-        config.keyPath = getEnv("HTCPP_KEY_PATH");
         loadBoolVar(config.accesLog, "HTCPP_ACCESS_LOG");
         loadBoolVar(config.debugLogging, "HTCPP_DEBUG_LOGGING");
         loadAddressVar(config.listenAddress, "HTCPP_LISTEN_ADDRESS");

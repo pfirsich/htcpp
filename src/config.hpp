@@ -6,8 +6,10 @@
 #include <netinet/in.h>
 
 struct Config {
+#ifdef TLS_SUPPORT_ENABLED
     std::optional<std::string> certPath;
     std::optional<std::string> keyPath;
+#endif
     uint16_t listenPort = 6969;
     uint32_t listenAddress = INADDR_ANY;
     bool accesLog = true;
