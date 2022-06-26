@@ -104,32 +104,28 @@ SslContext::operator SSL_CTX*()
     return ctx_;
 }
 
-SslContextManager& SslContextManager::instance()
+SslContextManager::SslContextManager(std::string certChainPath, std::string keyPath)
+    : certChainPath_(std::move(certChainPath))
+    , keyPath_(std::move(keyPath))
 {
-    static SslContextManager inst;
-    return inst;
+    updateContext();
 }
 
-bool SslContextManager::init(const std::string& certChainPath, const std::string& keyPath)
+std::shared_ptr<SslContext> SslContextManager::getCurrentContext() const
 {
-    certChainPath_ = certChainPath;
-    keyPath_ = keyPath;
-    return updateContext();
-}
-
-std::shared_ptr<SslContext> SslContextManager::getCurrentContext()
-{
-    assert(currentContext_);
     return currentContext_;
 }
 
-bool SslContextManager::updateContext()
+void SslContextManager::updateContext()
 {
-    currentContext_ = std::make_shared<SslContext>();
-    if (!static_cast<SSL_CTX*>(*currentContext_)) {
-        return false;
+    const auto ctx = std::make_shared<SslContext>();
+    if (!static_cast<SSL_CTX*>(*ctx)) {
+        return;
     }
-    return currentContext_->init(certChainPath_, keyPath_);
+    if (!ctx->init(certChainPath_, keyPath_)) {
+        return;
+    }
+    currentContext_ = std::move(ctx);
 }
 
 const char* OpenSslErrorCategory::name() const noexcept
@@ -192,9 +188,9 @@ int SslOperationFunc<SslOperation::Shutdown>::operator()(SSL* ssl, void*, int)
     return result;
 }
 
-SslConnection::SslConnection(IoQueue& io, int fd)
+SslConnection::SslConnection(IoQueue& io, int fd, std::shared_ptr<SslContext> context)
     : TcpConnection(io, fd)
-    , ssl_(SSL_new(*SslContextManager::instance().getCurrentContext()))
+    , ssl_(SSL_new(*context))
 {
     if (!ssl_) {
         slog::error("Could not create SSL object: ", getSslErrorString());
@@ -232,6 +228,17 @@ SslConnection::~SslConnection()
 {
     SSL_free(ssl_);
     BIO_free(externalBio_);
+}
+
+SslConnection::SslConnection(SslConnection&& other)
+    : TcpConnection(other.io_, other.fd_)
+    , ssl_(other.ssl_)
+    , externalBio_(other.externalBio_)
+    , recvBuffer_(std::move(other.recvBuffer_))
+    , sendBuffer_(std::move(other.sendBuffer_))
+{
+    other.ssl_ = nullptr;
+    other.externalBio_ = nullptr;
 }
 
 void SslConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler)
@@ -344,3 +351,8 @@ template void SslConnection::performSslOperation<SslOperation::Write>(
     void* buffer, size_t length, IoQueue::HandlerEcRes handler);
 template void SslConnection::performSslOperation<SslOperation::Shutdown>(
     void* buffer, size_t length, IoQueue::HandlerEcRes handler);
+
+SslConnectionFactory::SslConnectionFactory(std::string certChainPath, std::string keyPath)
+    : contextManager(std::move(certChainPath), std::move(keyPath))
+{
+}

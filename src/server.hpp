@@ -19,16 +19,17 @@
 Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024);
 
 // Maybe I should put the function definitions into server.cpp and instantiate the template
-// explicitly for TcpConnection and SslConnection, but I would have to do that in server.cpp
-// (meaning I would have to include ssl.hpp), which I don't really like right now.
-template <typename Connection>
+// explicitly for TcpConnection and SslConnection, but I would have include ssl.hpp here, which I do
+// not like right now.
+template <typename ConnectionFactory>
 class Server {
 public:
-    Server(IoQueue& io, std::function<Response(const Request&)> handler)
+    Server(IoQueue& io, ConnectionFactory factory, std::function<Response(const Request&)> handler)
         : io_(io)
         , listenSocket_(createTcpListenSocket(
               Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
         , handler_(std::move(handler))
+        , connectionFactory_(std::move(factory))
     {
         if (listenSocket_ == -1) {
             slog::fatal("Could not create listen socket: ", errnoToString(errno));
@@ -43,13 +44,15 @@ public:
     }
 
 private:
+    using Connection = typename ConnectionFactory::Connection;
+
     // A Session will have ownership of itself and decide on its own when it's time to be
     // destroyed
     class Session : public std::enable_shared_from_this<Session> {
     public:
-        Session(IoQueue& io, int fd, std::function<Response(const Request&)>& handler,
+        Session(Connection&& connection, std::function<Response(const Request&)>& handler,
             std::string remoteAddr)
-            : connection_(io, fd)
+            : connection_(std::move(connection))
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
             , trackInProgressHandle_(Metrics::get().connActive.labels().trackInProgress())
@@ -335,7 +338,7 @@ private:
             static auto& connAccepted = Metrics::get().connAccepted.labels();
             connAccepted.inc();
             const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
-            std::make_shared<Session>(io_, fd, handler_, addr)->start();
+            std::make_shared<Session>(connectionFactory_.create(io_, fd), handler_, addr)->start();
         }
 
         accept();
@@ -346,4 +349,5 @@ private:
     std::function<Response(const Request&)> handler_;
     ::sockaddr_in acceptAddr_;
     ::socklen_t acceptAddrLen_;
+    ConnectionFactory connectionFactory_;
 };

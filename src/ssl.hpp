@@ -40,20 +40,12 @@ private:
 // Later this thing should recreate contexts, when the certificates get renewed
 class SslContextManager {
 public:
-    static SslContextManager& instance();
+    SslContextManager(std::string certChainPath, std::string keyPath);
 
-    bool init(const std::string& certChainPath, const std::string& keyPath);
-
-    std::shared_ptr<SslContext> getCurrentContext();
+    std::shared_ptr<SslContext> getCurrentContext() const;
 
 private:
-    SslContextManager() = default;
-    SslContextManager(const SslContextManager&) = delete;
-    SslContextManager(SslContextManager&&) = delete;
-    SslContextManager& operator=(const SslContextManager&) = delete;
-    SslContextManager& operator=(SslContextManager&&) = delete;
-
-    bool updateContext();
+    void updateContext();
 
     std::string certChainPath_;
     std::string keyPath_;
@@ -94,19 +86,21 @@ struct SslOperationFunc<SslOperation::Shutdown> {
 // This whole thing is *heavily* inspired by what Boost ASIO is doing
 class SslConnection : public TcpConnection {
 public:
-    SslConnection(IoQueue& io, int fd);
+    SslConnection(IoQueue& io, int fd, std::shared_ptr<SslContext> context);
+    // Note: This class is not actually movable (because it's captured in lambdas), but it can be
+    // moved before any operation is done on it. And we need that.
+    SslConnection(SslConnection&&);
     ~SslConnection();
+
+    SslConnection(const SslConnection&) = delete;
+    SslConnection& operator=(const SslConnection&) = delete;
+    SslConnection& operator=(SslConnection&&) = delete;
 
     // If a handler of any of these three functions comes back with an error,
     // don't do any other IO on the socket and do not call shutdown (just close it).
     void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);
     void send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler);
     void shutdown(IoQueue::HandlerEc handler);
-
-    SslConnection(const SslConnection&) = default;
-    SslConnection(SslConnection&&) = default;
-    SslConnection& operator=(const SslConnection&) = default;
-    SslConnection& operator=(SslConnection&&) = default;
 
 private:
     template <SslOperation Op>
@@ -116,4 +110,17 @@ private:
     BIO* externalBio_ = nullptr;
     std::vector<char> recvBuffer_;
     std::vector<char> sendBuffer_;
+};
+
+struct SslConnectionFactory {
+    using Connection = SslConnection;
+
+    SslContextManager contextManager;
+
+    SslConnectionFactory(std::string certChainPath, std::string keyPath);
+
+    Connection create(IoQueue& io, int fd)
+    {
+        return Connection(io, fd, contextManager.getCurrentContext());
+    }
 };

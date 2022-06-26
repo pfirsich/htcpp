@@ -205,17 +205,18 @@ int main(int argc, char** argv)
 
 #ifdef TLS_SUPPORT_ENABLED
     if (config.certPath && config.keyPath) {
-        if (!SslContextManager::instance().init(*config.certPath, *config.keyPath)) {
+        const auto factory = SslConnectionFactory(*config.certPath, *config.keyPath);
+        if (!factory.contextManager.getCurrentContext()) {
             return 1;
         }
 
-        Server<SslConnection> server(io, router);
+        Server<SslConnectionFactory> server(io, std::move(factory), router);
         server.start();
         return 0;
     }
 #endif
 
-    Server<TcpConnection> server(io, router);
+    Server<TcpConnectionFactory> server(io, TcpConnectionFactory {}, router);
     server.start();
     return 0;
 }

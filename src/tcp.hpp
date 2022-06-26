@@ -17,3 +17,12 @@ protected:
     IoQueue& io_;
     int fd_;
 };
+
+struct TcpConnectionFactory {
+    using Connection = TcpConnection;
+
+    Connection create(IoQueue& io, int fd)
+    {
+        return Connection(io, fd);
+    }
+};
