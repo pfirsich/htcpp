@@ -9,6 +9,7 @@ Currently it has the following features:
 * FileCache/FileWatcher to serve files and automatically reload them (using inotify)
 * TLS
 * Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/) (at `/metrics` - configurable later)
+* The only dependency that is not another project of mine is OpenSSL
 
 It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
 
@@ -23,26 +24,32 @@ meson compile -C build
 
 If OpenSSL can be found during the build, TLS support is automatically enabled. The build will fail for OpenSSL versions earlier than `1.1.1`.
 
-## To Do
+## To Do (Must)
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
 * Config files and possibility to host multiple websites
 * Reload certificate/private key when they change on disk
+* Make it possible to have request handlers do other async IO (pass a continuation instead of using return value?)
 * Add a mechanism that dispatches work to a thread pool and notifies the IO queue via an eventfd, so I can do e.g. certificate loading and process metrics asynchronously
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
+* Make it work with certbot: If I implement automatic reloading of certificates and implement multiple websites, so I can host .well-known/acme-challenge on port 80, then I think the rest is just configuration.
+
+## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
     - Respond with 429/503 or start refusing connections if overloaded (likely both, but at different levels?)
     - Add concurrency limit (max number of concurrent connections)
     - Read timeout (see above)
-* certbot integration (includes reloading certificates if they are renewed). I am not sure what exactly that entails right now, but I know that I want it to work.
-* Make it work with certbot: If I implement automatic reloading of certificates and implement multiple websites, so I can host .well-known/acme-challenge on port 80, then I think the rest is just configuration.
-* Support HEAD requests for file server
-* [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since] for file server
-* IPv6
 * URL percent decoding (didn't need it yet)
+
+## To Do (Could)
 * Large file transfer (with `sendfile` or `slice`)
-* Partial Content ([Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) for file server
-    - Also add [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)[If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match) support
+    - Support HEAD requests for file server
+    - [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Modified-Since]
+    - Partial Content ([Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range)
+    - [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)/[If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match) support
+* IPv6
 * Directory Listings
+* HTTP Client
+* (after HTTP Client) Reverse proxy mode
 * (After Config) Header-Editing Rules (Add, Replace, Remove Headers)
 * Customizable access log: Have the option to include some request headers, like Referer or User-Agent
 
