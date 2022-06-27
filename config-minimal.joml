@@ -1,0 +1,21 @@
+services: {
+    "0.0.0.0:6969": {
+        access_log: true
+
+        hosts: {
+            "": {
+                root: "."
+            }
+        }
+    }
+
+    "0.0.0.0:6970": {
+        access_log: true
+
+        hosts: {
+            "": {
+                metrics: "/"
+            }
+        }
+    }
+}

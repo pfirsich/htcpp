@@ -8,8 +8,9 @@ Currently it has the following features:
 * A cool URL [router](src/router.hpp) like all the popular web frameworks (see example in [main.cpp](src/main.cpp))
 * FileCache/FileWatcher to serve files and automatically reload them (using inotify)
 * TLS with automatic reloading when certificate or private key change on disk
-* Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/) (at `/metrics` - configurable later)
+* Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/)
 * The only dependency that is not another project of mine is OpenSSL
+* Configuration files ([minimal](./config-minimal.joml), [tls](./config-tls.joml)) to host multiple sites
 
 It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
 
@@ -26,11 +27,11 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 
 ## To Do (Must)
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
-* Config files and possibility to host multiple websites
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
-* Make it work with certbot: If I implement automatic reloading of certificates and implement multiple websites, so I can host .well-known/acme-challenge on port 80, then I think the rest is just configuration.
+* Make it work with certbot: Now that I have reloading of certificates and I can configure multiple sites (to host `.well-known/acme-challenge` on port 80), I think I have everything that I need.
 * Make file reading asynchronous (there are a bunch of problem with this though)
 * Split off the library part better, so htcpp can actually be used as a library cleanly
+* URL Rewrite rules
 
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)

@@ -1,3 +1,5 @@
+#include <filesystem>
+
 #include <clipp.hpp>
 
 #include "hosthandler.hpp"
@@ -29,7 +31,7 @@ struct Args : clipp::ArgsBase {
 #endif
     // bool browse;
     std::optional<std::string> metrics;
-    std::optional<std::string> root = ".";
+    std::optional<std::string> arg = ".";
 
     void args()
     {
@@ -40,8 +42,10 @@ struct Args : clipp::ArgsBase {
         flag(tls, "tls").num(2).valueNames("CERT", "KEY");
 #endif
         // flag(browse, "browse", 'b');
-        flag(metrics, "metrics", 'm').help("Endpoint for Prometheus-compatible metrics");
-        positional(root, "root");
+        flag(metrics, "metrics", 'm')
+            .valueNames("ENDPOINT")
+            .help("Endpoint for Prometheus-compatible metrics");
+        positional(arg, "arg");
     }
 };
 
@@ -49,10 +53,20 @@ int main(int argc, char** argv)
 {
     auto parser = clipp::Parser(argv[0]);
     const Args args = parser.parse<Args>(argc, argv).value();
+    slog::init(args.debug ? slog::Severity::Debug : slog::Severity::Info);
 
     auto& config = Config::get();
-    config.services.emplace_back();
-    config.services.back().hosts.emplace("", Config::Service::Host { args.root, args.metrics });
+    if (std::filesystem::is_regular_file(args.arg.value())) {
+        if (!config.loadFromFile(*args.arg)) {
+            return 1;
+        }
+    } else if (std::filesystem::is_directory(args.arg.value())) {
+        config.services.emplace_back();
+        config.services.back().hosts.emplace("", Config::Service::Host { args.arg, args.metrics });
+    } else {
+        slog::error("Invalid argument. Must either be a config file or a directory to serve");
+        return 1;
+    }
 
     if (args.listen) {
         if (args.listen->ip) {
@@ -66,8 +80,6 @@ int main(int argc, char** argv)
         config.services.back().tls.emplace(Config::Service::Tls { args.tls[0], args.tls[1] });
     }
 #endif
-
-    slog::init(args.debug ? slog::Severity::Debug : slog::Severity::Info);
 
     IoQueue io(config.ioQueueSize);
 
