@@ -32,25 +32,26 @@ std::optional<Method> parseMethod(std::string_view method)
 
 std::string toString(Method method)
 {
-    if (method == Method::Get) {
+    switch (method) {
+    case Method::Get:
         return "GET";
-    } else if (method == Method::Head) {
+    case Method::Head:
         return "HEAD";
-    } else if (method == Method::Post) {
+    case Method::Post:
         return "POST";
-    } else if (method == Method::Put) {
+    case Method::Put:
         return "PUT";
-    } else if (method == Method::Delete) {
+    case Method::Delete:
         return "DELETE";
-    } else if (method == Method::Connect) {
+    case Method::Connect:
         return "CONNECT";
-    } else if (method == Method::Options) {
+    case Method::Options:
         return "OPTIONS";
-    } else if (method == Method::Trace) {
+    case Method::Trace:
         return "TRACE";
-    } else if (method == Method::Patch) {
+    case Method::Patch:
         return "PATCH";
-    } else {
+    default:
         return "invalid";
     }
 }
