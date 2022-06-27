@@ -65,3 +65,11 @@ executable('htcpp', bin_src,
     clipp_dep,
   ],
 )
+
+executable('libexample', 'src/libexample.cpp',
+  cpp_args : flags,
+  include_directories : ['src'],
+  dependencies : [
+    htcpp_dep,
+  ],
+)
