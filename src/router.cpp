@@ -2,28 +2,51 @@
 
 #include <cassert>
 
-void Router::route(
-    std::string_view pattern, std::function<Response(const Request&, const RouteParams&)> handler)
+void Router::route(std::string_view pattern,
+    std::function<void(const Request&, const RouteParams&, std::shared_ptr<Responder>)> handler)
 {
     routes_.push_back(Route { Route::Pattern::parse(pattern), Method::Get, std::move(handler) });
 }
 
-void Router::route(std::string_view pattern, Method method,
-    std::function<Response(const Request&, const RouteParams&)> handler)
+void Router::route(
+    std::string_view pattern, std::function<Response(const Request&, const RouteParams&)> handler)
+{
+    routes_.push_back(Route {
+        Route::Pattern::parse(pattern),
+        Method::Get,
+        [handler = std::move(handler)](const Request& request, const RouteParams& params,
+            std::shared_ptr<Responder> responder) { responder->respond(handler(request, params)); },
+    });
+}
+
+void Router::route(Method method, std::string_view pattern,
+    std::function<void(const Request&, const RouteParams&, std::shared_ptr<Responder>)> handler)
 {
     routes_.push_back(Route { Route::Pattern::parse(pattern), method, std::move(handler) });
 }
 
-Response Router::operator()(const Request& request) const
+void Router::route(Method method, std::string_view pattern,
+    std::function<Response(const Request&, const RouteParams&)> handler)
+{
+    routes_.push_back(Route {
+        Route::Pattern::parse(pattern),
+        method,
+        [handler = std::move(handler)](const Request& request, const RouteParams& params,
+            std::shared_ptr<Responder> responder) { responder->respond(handler(request, params)); },
+    });
+}
+
+void Router::operator()(const Request& request, std::shared_ptr<Responder> responder) const
 {
     for (const auto& route : routes_) {
         const auto params = route.pattern.match(request.url.path);
         if (params) {
-            return route.handler(request, *params);
+            route.handler(request, *params, std::move(responder));
+            return;
         }
     }
     // No matching route
-    return Response(StatusCode::NotFound, "Not Found");
+    responder->respond(Response(StatusCode::NotFound, "Not Found"));
 }
 
 Router::Route::Pattern Router::Route::Pattern::parse(std::string_view str)

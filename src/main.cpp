@@ -149,10 +149,10 @@ int main(int argc, char** argv)
 
     Router router;
 
-    router.route("/", Method::Get,
+    router.route(Method::Get, "/",
         [](const Request&, const Router::RouteParams&) -> Response { return "Hello!"s; });
 
-    router.route("/number/:num", Method::Get,
+    router.route(Method::Get, "/number/:num",
         [](const Request&, const Router::RouteParams& params) -> Response {
             return "Number: "s + std::string(params.at("num"));
         });
@@ -199,9 +199,19 @@ int main(int argc, char** argv)
             return Response(*f, getMimeType(std::string(ext)));
         });
 
-    router.route("/metrics", [](const Request&, const Router::RouteParams&) -> Response {
-        return Response(cpprom::Registry::getDefault().serialize(), "text/plain; version=0.0.4");
-    });
+    router.route("/metrics",
+        [&io](const Request&, const Router::RouteParams&, std::shared_ptr<Responder> responder) {
+            io.async<Response>(
+                []() {
+                    return Response(
+                        cpprom::Registry::getDefault().serialize(), "text/plain; version=0.0.4");
+                },
+                [responder = std::move(responder)](
+                    std::error_code ec, Response&& response) mutable {
+                    assert(!ec);
+                    responder->respond(std::move(response));
+                });
+        });
 
 #ifdef TLS_SUPPORT_ENABLED
     if (config.certPath && config.keyPath) {

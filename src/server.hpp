@@ -16,7 +16,20 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, int backlog = 1024);
+Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int backlog);
+
+struct Responder {
+    virtual ~Responder() = default;
+    virtual void respond(Response&& response) = 0;
+};
+
+// I really don't like this interface, but I feel like I have no choice. The "Responder"
+// has to have some kind of type erasure (hence the virtual function), because eventually we need to
+// call into a TCP and a SSL Session, which are different types (different template instantiations).
+// And because we use a virtual function to respond, we need to use some kind of reference-type, but
+// it needs to be copyable, to please std::function (I'm getting really tired of that requirement).
+// I feel like I have no choice but to do it this way.
+using RequestHandler = std::function<void(const Request&, std::shared_ptr<Responder>)>;
 
 // Maybe I should put the function definitions into server.cpp and instantiate the template
 // explicitly for TcpConnection and SslConnection, but I would have include ssl.hpp here, which I do
@@ -24,7 +37,9 @@ Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr = INADDR_ANY, 
 template <typename ConnectionFactory>
 class Server {
 public:
-    Server(IoQueue& io, ConnectionFactory factory, std::function<Response(const Request&)> handler)
+    using Connection = typename ConnectionFactory::Connection;
+
+    Server(IoQueue& io, ConnectionFactory factory, RequestHandler handler)
         : io_(io)
         , listenSocket_(createTcpListenSocket(
               Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
@@ -44,14 +59,28 @@ public:
     }
 
 private:
-    using Connection = typename ConnectionFactory::Connection;
+    class Session;
+
+    struct SessionResponder : public Responder {
+        // shared_ptr on the session to keep it alive as long as this lives
+        std::shared_ptr<Session> session;
+
+        SessionResponder(std::shared_ptr<Session> session)
+            : session(std::move(session))
+        {
+        }
+
+        void respond(Response&& response) override
+        {
+            session->respond(std::move(response));
+        }
+    };
 
     // A Session will have ownership of itself and decide on its own when it's time to be
     // destroyed
     class Session : public std::enable_shared_from_this<Session> {
     public:
-        Session(Connection&& connection, std::function<Response(const Request&)>& handler,
-            std::string remoteAddr)
+        Session(Connection&& connection, RequestHandler& handler, std::string remoteAddr)
             : connection_(std::move(connection))
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
@@ -79,6 +108,8 @@ private:
         }
 
     private:
+        friend class SessionResponder;
+
         // Inspired by this: https://github.com/expressjs/morgan#predefined-formats
         void accessLog(std::string_view requestLine, StatusCode responseStatus,
             size_t responseContentLength) const
@@ -219,13 +250,18 @@ private:
             Metrics::get()
                 .reqBodySize.labels(toString(request.method), request.url.path)
                 .observe(requestBodyBuffer_.size());
-            response_ = handler_(request);
+            handler_(request, std::make_shared<SessionResponder>(this->shared_from_this()));
+        }
+
+        void respond(Response&& response)
+        {
+            response_ = std::move(response);
             const auto status = std::to_string(static_cast<int>(response_.status));
             Metrics::get()
-                .reqsTotal.labels(toString(request.method), request.url.path, status)
+                .reqsTotal.labels(toString(request_.method), request_.url.path, status)
                 .inc();
-            accessLog(request.requestLine, response_.status, response_.body.size());
-            respond(response_.string(request.version), getKeepAlive(request));
+            accessLog(request_.requestLine, response_.status, response_.body.size());
+            respond(response_.string(request_.version), getKeepAlive(request_));
         }
 
         void respond(std::string response, bool keepAlive)
@@ -292,7 +328,7 @@ private:
         }
 
         Connection connection_;
-        std::function<Response(const Request&)>& handler_;
+        RequestHandler& handler_;
         std::string remoteAddr_;
         // The Request object is the result of request header parsing and consists of many
         // string_views referencing the buffer that the request was parsed from. If that buffer
@@ -346,7 +382,7 @@ private:
 
     IoQueue& io_;
     Fd listenSocket_;
-    std::function<Response(const Request&)> handler_;
+    RequestHandler handler_;
     ::sockaddr_in acceptAddr_;
     ::socklen_t acceptAddrLen_;
     ConnectionFactory connectionFactory_;

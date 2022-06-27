@@ -4,9 +4,8 @@
 
 Metrics& Metrics::get()
 {
-    static auto& reg = cpprom::Registry::getDefault();
-    // Process metrics are currently disabled, because they block
-    //.registerCollector(cpprom::makeProcessMetricsCollector());
+    static auto& reg
+        = cpprom::Registry::getDefault().registerCollector(cpprom::makeProcessMetricsCollector());
     static auto durationBuckets = cpprom::Histogram::defaultBuckets();
     static auto sizeBuckets = cpprom::Histogram::exponentialBuckets(256.0, 4.0, 7);
     static Metrics metrics {

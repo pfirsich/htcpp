@@ -131,7 +131,6 @@ IoQueue::NotifyHandle IoQueue::wait(std::function<void(std::error_code, uint64_t
     auto bufData = buf.get();
     const auto res = read(fd, bufData, sizeof(uint64_t),
         [fd, buf = std::move(buf), cb = std::move(cb)](std::error_code ec, int res) {
-            slog::debug("read done: ", ec.message());
             ::close(fd);
             if (ec) {
                 cb(ec, 0);
