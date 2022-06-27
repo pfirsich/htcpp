@@ -9,16 +9,13 @@ liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_
 
 flags = []
 
-src = [
-  'src/config.cpp',
+lib_src = [
   'src/fd.cpp',
   'src/filecache.cpp',
   'src/filewatcher.cpp',
-  'src/hosthandler.cpp',
   'src/http.cpp',
   'src/ioqueue.cpp',
   'src/log.cpp',
-  'src/main.cpp',
   'src/metrics.cpp',
   'src/router.cpp',
   'src/server.cpp',
@@ -28,17 +25,43 @@ src = [
 ]
 
 if openssl_dep.found()
-  src += 'src/ssl.cpp'
+  lib_src += 'src/ssl.cpp'
   flags += '-DTLS_SUPPORT_ENABLED'
 endif
 
-executable('htcpp', src, include_directories : ['src'],
-  cpp_args : flags,
-  dependencies : [
-    threads_dep,
-    openssl_dep,
+htcpp_lib_deps = [
+  threads_dep,
+  openssl_dep,
+  cpprom_dep,
+  liburingpp_dep,
+]
 
+# This is not really clean, but it's a start
+htcpp_inc = include_directories('src')
+htcpp_lib = static_library('htcpp', lib_src,
+  cpp_args : flags,
+  include_directories : htcpp_inc,
+  dependencies : htcpp_lib_deps,
+)
+htcpp_dep = declare_dependency(
+  compile_args : flags,
+  include_directories : htcpp_inc,
+  link_with : htcpp_lib,
+  # Not quite sure why I need this: https://github.com/mesonbuild/meson/issues/10543
+  dependencies : htcpp_lib_deps,
+)
+
+bin_src = [
+  'src/config.cpp',
+  'src/hosthandler.cpp',
+  'src/htcpp.cpp',
+]
+
+executable('htcpp', bin_src,
+  cpp_args : flags,
+  include_directories : ['src'],
+  dependencies : [
+    htcpp_dep,
     clipp_dep,
-    cpprom_dep,
-    liburingpp_dep,
-  ])
+  ],
+)
