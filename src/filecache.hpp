@@ -20,8 +20,6 @@ public:
     const std::string* get(const std::string& path);
 
 private:
-    static std::optional<std::string> readFile(const std::string& path);
-
     struct File {
         std::string path;
         std::optional<std::string> contents = std::nullopt;

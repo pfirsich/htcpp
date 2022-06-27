@@ -4,6 +4,7 @@
 
 #include "log.hpp"
 #include "metrics.hpp"
+#include "util.hpp"
 
 FileCache::FileCache(IoQueue& io)
     : io_(io)
@@ -36,36 +37,6 @@ const std::string* FileCache::get(const std::string& path)
         return nullptr;
     }
     return &*it->second.contents;
-}
-
-std::optional<std::string> FileCache::readFile(const std::string& path)
-{
-    const auto timeHandle = Metrics::get().fileReadDuration.labels(path).time();
-    auto f = std::unique_ptr<FILE, decltype(&std::fclose)>(
-        std::fopen(path.c_str(), "rb"), &std::fclose);
-    if (!f) {
-        slog::error("Could not open file: '", path, "'");
-        return std::nullopt;
-    }
-    if (std::fseek(f.get(), 0, SEEK_END) != 0) {
-        slog::error("Error seeking to end of file: '", path, "'");
-        return std::nullopt;
-    }
-    const auto size = std::ftell(f.get());
-    if (size < 0) {
-        slog::error("Error getting size of file: '", path, "'");
-        return std::nullopt;
-    }
-    if (std::fseek(f.get(), 0, SEEK_SET) != 0) {
-        slog::error("Error seeking to start of file: '", path, "'");
-        return std::nullopt;
-    }
-    std::string buf(size, '\0');
-    if (std::fread(buf.data(), 1, size, f.get()) != static_cast<size_t>(size)) {
-        slog::error("Error reading file: '", path, "'");
-        return std::nullopt;
-    }
-    return buf;
 }
 
 void FileCache::File::reload()

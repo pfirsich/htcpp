@@ -230,8 +230,7 @@ std::optional<Request> Request::parse(std::string_view requestStr)
         slog::debug("No URL");
         return std::nullopt;
     }
-    // SHOULD actually return "414 Request-URI Too Long" here (RFC2616 3.2.1)
-    const auto urlLen = req.requestLine.substr(urlStart, Config::get().maxUrlLength).find(' ');
+    const auto urlLen = req.requestLine.substr(urlStart).find(' ');
     if (urlLen == std::string::npos) {
         slog::debug("No URL end");
         return std::nullopt;

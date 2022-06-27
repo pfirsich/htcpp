@@ -14,6 +14,7 @@ src = [
   'src/fd.cpp',
   'src/filecache.cpp',
   'src/filewatcher.cpp',
+  'src/hosthandler.cpp',
   'src/http.cpp',
   'src/ioqueue.cpp',
   'src/log.cpp',

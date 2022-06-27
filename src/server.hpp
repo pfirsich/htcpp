@@ -39,12 +39,14 @@ class Server {
 public:
     using Connection = typename ConnectionFactory::Connection;
 
-    Server(IoQueue& io, ConnectionFactory factory, RequestHandler handler)
+    Server(IoQueue& io, ConnectionFactory factory, RequestHandler handler,
+        Config::Server config = Config::Server {})
         : io_(io)
-        , listenSocket_(createTcpListenSocket(
-              Config::get().listenPort, Config::get().listenAddress, Config::get().listenBacklog))
+        , listenSocket_(
+              createTcpListenSocket(config.listenPort, config.listenAddress, config.listenBacklog))
         , handler_(std::move(handler))
         , connectionFactory_(std::move(factory))
+        , config_(std::move(config))
     {
         if (listenSocket_ == -1) {
             slog::fatal("Could not create listen socket: ", errnoToString(errno));
@@ -55,7 +57,6 @@ public:
     void start()
     {
         accept();
-        io_.run();
     }
 
 private:
@@ -80,14 +81,16 @@ private:
     // destroyed
     class Session : public std::enable_shared_from_this<Session> {
     public:
-        Session(Connection&& connection, RequestHandler& handler, std::string remoteAddr)
+        Session(Connection&& connection, RequestHandler& handler, std::string remoteAddr,
+            const Config::Server& serverConfig)
             : connection_(std::move(connection))
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
             , trackInProgressHandle_(Metrics::get().connActive.labels().trackInProgress())
+            , serverConfig_(serverConfig)
         {
-            requestHeaderBuffer_.reserve(Config::get().maxRequestHeaderSize);
-            requestBodyBuffer_.reserve(Config::get().maxRequestBodySize);
+            requestHeaderBuffer_.reserve(serverConfig_.maxRequestHeaderSize);
+            requestBodyBuffer_.reserve(serverConfig_.maxRequestBodySize);
         }
 
         ~Session() = default;
@@ -114,7 +117,7 @@ private:
         void accessLog(std::string_view requestLine, StatusCode responseStatus,
             size_t responseContentLength) const
         {
-            if (Config::get().accesLog) {
+            if (serverConfig_.accesLog) {
                 slog::info(remoteAddr_, " \"", requestLine, "\" ", static_cast<int>(responseStatus),
                     " ", responseContentLength);
             }
@@ -124,9 +127,9 @@ private:
         {
             requestHeaderBuffer_.clear();
             requestBodyBuffer_.clear();
-            IoQueue::setAbsoluteTimeout(&readTimeout_, Config::get().fullReadTimeoutMs);
+            IoQueue::setAbsoluteTimeout(&readTimeout_, serverConfig_.fullReadTimeoutMs);
 
-            const auto recvLen = Config::get().maxRequestHeaderSize;
+            const auto recvLen = serverConfig_.maxRequestHeaderSize;
             requestHeaderBuffer_.append(recvLen, '\0');
             connection_.recv(requestHeaderBuffer_.data(), recvLen,
                 // `this->` before `shared_from_this` is necessary or you get an error
@@ -171,7 +174,7 @@ private:
                             return;
                         }
 
-                        if (*length > Config::get().maxRequestBodySize) {
+                        if (*length > serverConfig_.maxRequestBodySize) {
                             accessLog("INVALID REQUEST (body size)", StatusCode::BadRequest, 0);
                             Metrics::get().reqErrors.labels("body too large").inc();
                             respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
@@ -342,6 +345,7 @@ private:
         IoQueue::Timespec readTimeout_;
         cpprom::Gauge::TrackInProgressHandle trackInProgressHandle_;
         double requestStart_;
+        const Config::Server& serverConfig_;
     };
 
     void accept()
@@ -374,7 +378,8 @@ private:
             static auto& connAccepted = Metrics::get().connAccepted.labels();
             connAccepted.inc();
             const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
-            std::make_shared<Session>(connectionFactory_.create(io_, fd), handler_, addr)->start();
+            std::make_shared<Session>(connectionFactory_.create(io_, fd), handler_, addr, config_)
+                ->start();
         }
 
         accept();
@@ -386,4 +391,5 @@ private:
     ::sockaddr_in acceptAddr_;
     ::socklen_t acceptAddrLen_;
     ConnectionFactory connectionFactory_;
+    Config::Server config_;
 };
