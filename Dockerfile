@@ -16,6 +16,8 @@ RUN meson configure \
   -Dbuildtype=release \
   -Db_lto=true \
   -Dclipp:default_library=static \
+  -Dcpprom:default_library=static \
+  -Djoml-cpp:default_library=static \
   -Dliburingpp:default_library=static \
   build/
 RUN meson compile -C build/
