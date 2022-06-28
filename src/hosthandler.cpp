@@ -2,13 +2,15 @@
 
 #include <cpprom/cpprom.hpp>
 
+#include "log.hpp"
+
 HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
     std::unordered_map<std::string, Config::Service::Host> config)
     : io_(io)
     , fileCache_(fileCache)
     , config_(config)
 {
-    const auto it = config_.find("");
+    const auto it = config_.find("*");
     if (it != config_.end()) {
         defaultHost_ = &it->second;
     }
