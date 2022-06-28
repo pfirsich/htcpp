@@ -120,6 +120,20 @@ int main(int argc, char** argv)
         server->start();
         tcpServers.push_back(std::move(server));
 #endif
+
+        for (const auto& [name, host] : service.hosts) {
+            std::string hosting;
+            if (host.root) {
+                hosting.append("root: '" + *host.root + "'");
+            }
+            if (host.metrics) {
+                if (host.root) {
+                    hosting.append(", ");
+                }
+                hosting.append("metrics: '" + *host.metrics + "'");
+            }
+            slog::info("Host '", name, "': ", hosting);
+        }
     }
     io.run();
     return 0;

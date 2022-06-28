@@ -56,6 +56,8 @@ public:
 
     void start()
     {
+        slog::info("Listening on ", ::inet_ntoa(::in_addr { config_.listenAddress }), ":",
+            config_.listenPort);
         accept();
     }
 
