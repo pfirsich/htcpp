@@ -11,7 +11,7 @@ Currently it has the following features:
 * TLS with automatic reloading of certificate chain or private key if they change on disk
 * Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/)
 * The only dependency that is not another project of mine is OpenSSL (of course exclusing the Linux Kernel, glibc and the standard library).
-* [JOML](https://github.com/pfirsich/joml) configuration files ([minimal](./config-minimal.joml), [tls](./config-tls.joml))
+* [JOML](https://github.com/pfirsich/joml) configuration files ([minimal](./config-minimal.joml), [tls](./config-tls.joml), [multisite](./config-multisite.joml))
 
 It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
 

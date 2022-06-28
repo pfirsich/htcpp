@@ -1,0 +1,20 @@
+services: {
+    "0.0.0.0:6969": {
+        hosts: {
+            "src.localhost": {
+                root: "src/"
+            }
+            "scripts.localhost": {
+                root: "scripts/"
+            }
+        }
+    }
+
+    "0.0.0.0:6970": {
+        hosts: {
+            "*": {
+                metrics: "/"
+            }
+        }
+    }
+}
