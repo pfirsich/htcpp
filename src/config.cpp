@@ -146,6 +146,12 @@ bool Config::loadFromFile(const std::string& path)
                                 }
                             }
 
+                            if (!host.root && !host.metrics) {
+                                slog::error("Must specify either 'root' or 'metrics' for host ('",
+                                    hostName, "')");
+                                return false;
+                            }
+
                             hostsFound = true;
                         }
                     } else {
