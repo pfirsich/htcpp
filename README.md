@@ -3,14 +3,15 @@
 A HTTP/1.1 server using [io_uring](https://en.wikipedia.org/wiki/Io_uring) built with C++17. It's single-threaded and all network IO and inotify usage is asynchronous.
 
 Currently it has the following features:
-* Handles basic HTTP/1.1 requests, parses them and responds
+* The `htcpp` executable is a file server that serves a specified directory (or multiple)
+* Can also be used as a library with a [Router](src/router.hpp) like many popular web frameworks (see example in [libexample.cpp](src/libexample.cpp))
+* Host multiple sites on different ports or for different `Host` headers
 * Persistent Connections (it doesn't support pipelining though, because no one does)
-* A cool URL [router](src/router.hpp) like all the popular web frameworks (see example in [main.cpp](src/main.cpp))
-* FileCache/FileWatcher to serve files and automatically reload them (using inotify)
-* TLS with automatic reloading when certificate or private key change on disk
+* Caches files and watches them using inotify to reload them automatically if they change on disk
+* TLS with automatic reloading of certificate chain or private key if they change on disk
 * Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/)
-* The only dependency that is not another project of mine is OpenSSL
-* Configuration files ([minimal](./config-minimal.joml), [tls](./config-tls.joml)) to host multiple sites
+* The only dependency that is not another project of mine is OpenSSL (of course exclusing the Linux Kernel, glibc and the standard library).
+* [JOML](https://github.com/pfirsich/joml) configuration files ([minimal](./config-minimal.joml), [tls](./config-tls.joml))
 
 It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
 
