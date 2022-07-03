@@ -26,7 +26,8 @@ FileWatcher::~FileWatcher()
     dirWatches_.clear();
 }
 
-bool FileWatcher::watch(std::string_view path, std::function<void(std::string_view)> callback)
+bool FileWatcher::watch(
+    std::string_view path, std::function<void(std::error_code, std::string_view)> callback)
 {
     const auto lastSep = path.rfind("/");
     const auto dirPath = lastSep == std::string_view::npos ? std::string(".")
@@ -82,13 +83,18 @@ void FileWatcher::onRead(std::error_code ec, int readBytes)
             if (dirWatch.wd < 0) {
                 slog::error(
                     "Could not rewatch directory '", dirWatch.path, "': ", errnoToString(errno));
+                for (const auto& [filename, fileWatch] : dirWatch.fileWatches) {
+                    fileWatch.callback(
+                        std::make_error_code(static_cast<std::errc>(errno)), fileWatch.path);
+                }
+                dirWatches_.erase(dirWatch.path);
             }
         } else if (event->len > 0) {
             assert(event->mask & IN_CLOSE_WRITE);
             const auto filename = std::string(event->name);
             const auto fit = dirWatch.fileWatches.find(filename);
             if (fit != dirWatch.fileWatches.end()) {
-                fit->second.callback(fit->second.path);
+                fit->second.callback(std::error_code(), fit->second.path);
             }
         }
         i += sizeof(inotify_event) + event->len;

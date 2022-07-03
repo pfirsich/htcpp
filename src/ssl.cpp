@@ -139,12 +139,18 @@ SslContextManager::SslContextManager(IoQueue& io, std::string certChainPath, std
     updateContext();
     // TODO: Cancel on destruction and take ownership of SslContextManager
     // for now we assume a SslContextManager lives forever
-    fileWatcher_.watch(certChainPath_, [this](std::string_view) { onFileChanged(); });
-    fileWatcher_.watch(keyPath_, [this](std::string_view) { onFileChanged(); });
+    fileWatcher_.watch(
+        certChainPath_, [this](std::error_code ec, std::string_view) { fileWatcherCallback(ec); });
+    fileWatcher_.watch(
+        keyPath_, [this](std::error_code ec, std::string_view) { fileWatcherCallback(ec); });
 }
 
-void SslContextManager::onFileChanged()
+void SslContextManager::fileWatcherCallback(std::error_code ec)
 {
+    if (ec) {
+        slog::fatal("Error watching certificates: ", ec.message());
+        std::exit(1);
+    }
     // TODO: Introduce some delay so we don't reload the certificate twice, when both the
     // certificate chain file and the private key changed shortly after another.
     io_.async<std::optional<SslContext>>(

@@ -15,7 +15,8 @@ public:
 
     ~FileWatcher();
 
-    bool watch(std::string_view path, std::function<void(std::string_view path)> callback);
+    bool watch(std::string_view path,
+        std::function<void(std::error_code ec, std::string_view path)> callback);
 
 private:
     static constexpr auto eventBufferLen = 8 * (sizeof(inotify_event) + NAME_MAX + 1);
@@ -23,7 +24,7 @@ private:
     struct FileWatch {
         std::string path;
         std::string filename;
-        std::function<void(std::string_view)> callback;
+        std::function<void(std::error_code ec, std::string_view path)> callback;
     };
 
     struct DirWatch {

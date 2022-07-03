@@ -22,7 +22,11 @@ const std::string* FileCache::get(const std::string& path)
     auto it = files_.find(path);
     if (it == files_.end()) {
         it = files_.emplace(path, File { path }).first;
-        fileWatcher_.watch(path, [this](std::string_view path) {
+        fileWatcher_.watch(path, [this](std::error_code ec, std::string_view path) {
+            if (ec) {
+                files_.erase(std::string(path));
+                return;
+            }
             slog::info("file changed: '", path, "'");
             files_.at(std::string(path)).dirty = true;
         });

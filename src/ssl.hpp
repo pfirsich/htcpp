@@ -55,7 +55,7 @@ public:
 private:
     void updateContext();
 
-    void onFileChanged();
+    void fileWatcherCallback(std::error_code ec);
 
     std::string certChainPath_;
     std::string keyPath_;
