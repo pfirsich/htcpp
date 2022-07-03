@@ -32,6 +32,7 @@ struct Metrics {
     cpprom::MetricFamily<cpprom::Counter>& reqErrors;
 
     cpprom::MetricFamily<cpprom::Counter>& fileCacheQueries;
+    cpprom::MetricFamily<cpprom::Counter>& fileCacheHits;
     cpprom::MetricFamily<cpprom::Counter>& fileCacheFailures;
     cpprom::MetricFamily<cpprom::Histogram>& fileReadDuration;
 

@@ -35,6 +35,8 @@ Metrics& Metrics::get()
 
         reg.counter("htcpp_filecache_queries_total", { "path" },
             "Number of queries towards the file cache"),
+        reg.counter("htcpp_filecache_hit_total", { "path" },
+            "Number of queries towards the file cache that returned data immediately"),
         reg.counter("htcpp_filecache_failures_total", { "path" },
             "Number of times the file cache could not load a file"),
         reg.histogram(

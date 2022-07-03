@@ -34,6 +34,8 @@ const std::string* FileCache::get(const std::string& path)
 
     if (it->second.dirty) {
         it->second.reload();
+    } else {
+        Metrics::get().fileCacheHits.labels(path).inc();
     }
 
     if (!it->second.contents) {
