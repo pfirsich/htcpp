@@ -33,6 +33,9 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 * Make file reading asynchronous (there are a bunch of problem with this though)
 * Split off the library part better, so htcpp can actually be used as a library cleanly
 * URL Rewrite rules
+* If no metrics are defined, do not pay for it at all (no .labels(), not counting - mock it?)
+* rename "root" to "files" so it can coexist with metrics much more easily and it's kind of like "routes"
+* LuaJIT for scripting dynamic websites
 
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
