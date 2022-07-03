@@ -39,6 +39,7 @@ void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> 
         // and:
         // If the host as determined by rule 1 or 2 is not a valid host on the server, the
         // response MUST be a 400 (Bad Request) error message.
+        slog::debug("No matching host for '", hostHeader.value_or("(none)"), "'");
         responder->respond(Response(StatusCode::BadRequest, "Bad Request"));
         return;
     }

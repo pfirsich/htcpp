@@ -62,7 +62,7 @@ int main(int argc, char** argv)
         }
     } else if (std::filesystem::is_directory(args.arg.value())) {
         config.services.emplace_back();
-        config.services.back().hosts.emplace("", Config::Service::Host { args.arg, args.metrics });
+        config.services.back().hosts.emplace("*", Config::Service::Host { args.arg, args.metrics });
     } else {
         slog::error("Invalid argument. Must either be a config file or a directory to serve");
         return 1;
