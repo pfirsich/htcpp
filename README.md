@@ -31,7 +31,7 @@ If OpenSSL can be found during the build, TLS support is automatically enabled. 
 * SQPOLL to decrease syscalls/context switches
 * TLS SNI (then move `tls` object into `hosts`)
 * auto-rewrite (append .html, / -> index.html)
-* Configure MIME Types in config and add a more comprehensive default list
+* Configure MIME Types in config
 * Signal handling so it works better in Docker
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
 * Make it work with certbot: Now that I have reloading of certificates and I can configure multiple sites (to host `.well-known/acme-challenge` on port 80), I think I have everything that I need.
