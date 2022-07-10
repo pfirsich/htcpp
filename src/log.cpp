@@ -41,7 +41,7 @@ namespace {
                 ::usleep(1);
                 continue;
             }
-            ::write(STDOUT_FILENO, line->data(), line->size());
+            [[maybe_unused]] auto ignore = ::write(STDOUT_FILENO, line->data(), line->size());
         }
     }
 
@@ -50,6 +50,16 @@ namespace {
         logThreadRunning().store(false);
         logThread().join();
     }
+}
+
+std::string_view toString(Severity severity)
+{
+    static constexpr std::array strings { "DEBUG", "INFO", "WARNING", "ERROR", "FATAL" };
+    const auto idx = static_cast<int>(severity);
+    if (idx < 0 || static_cast<size_t>(idx) >= strings.size()) {
+        return "INVALID";
+    }
+    return strings[idx];
 }
 
 void setLogLevel(Severity severity)
