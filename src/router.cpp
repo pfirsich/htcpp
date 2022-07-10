@@ -39,6 +39,9 @@ void Router::route(Method method, std::string_view pattern,
 void Router::operator()(const Request& request, std::shared_ptr<Responder> responder) const
 {
     for (const auto& route : routes_) {
+        if (route.method != request.method) {
+            continue;
+        }
         const auto params = route.pattern.match(request.url.path);
         if (params) {
             route.handler(request, *params, std::move(responder));
