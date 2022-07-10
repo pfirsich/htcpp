@@ -25,7 +25,12 @@ struct Config {
 
     struct Service : public Server {
         struct Host {
-            std::optional<std::string> root;
+            struct FilesEntry {
+                std::string urlPath;
+                std::string fsPath;
+            };
+
+            std::vector<FilesEntry> files;
             std::optional<std::string> metrics;
         };
 

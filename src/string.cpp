@@ -54,3 +54,8 @@ std::vector<std::string_view> split(std::string_view str, char delim)
     parts.push_back(str.substr(i));
     return parts;
 }
+
+bool startsWith(std::string_view str, std::string_view start)
+{
+    return str.substr(0, start.size()) == start;
+}

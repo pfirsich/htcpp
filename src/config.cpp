@@ -128,12 +128,24 @@ bool Config::loadFromFile(const std::string& path)
                             }
 
                             for (const auto& [hkey, hvalue] : jhost.as<joml::Node::Dictionary>()) {
-                                if (hkey == "root") {
-                                    if (!hvalue.is<joml::Node::String>()) {
-                                        slog::error("'root' must be a string");
+                                if (hkey == "files") {
+                                    if (hvalue.is<joml::Node::String>()) {
+                                        host.files.emplace_back(Service::Host::FilesEntry {
+                                            "/", hvalue.as<joml::Node::String>() });
+                                    } else if (hvalue.is<joml::Node::Dictionary>()) {
+                                        for (const auto& [urlPath, fsPath] :
+                                            hvalue.as<joml::Node::Dictionary>()) {
+                                            if (!fsPath.is<joml::Node::String>()) {
+                                                slog::error("'files' values must be a string");
+                                                return false;
+                                            }
+                                            host.files.emplace_back(Service::Host::FilesEntry {
+                                                urlPath, fsPath.as<joml::Node::String>() });
+                                        }
+                                    } else {
+                                        slog::error("'files' must be a string or a dictionary");
                                         return false;
                                     }
-                                    host.root = hvalue.as<joml::Node::String>();
                                 } else if (hkey == "metrics") {
                                     if (!hvalue.is<joml::Node::String>()) {
                                         slog::error("'metrics' must be a string");
@@ -146,8 +158,9 @@ bool Config::loadFromFile(const std::string& path)
                                 }
                             }
 
-                            if (!host.root && !host.metrics) {
-                                slog::error("Must specify either 'root' or 'metrics' for host ('",
+                            if (host.files.empty() && !host.metrics) {
+                                slog::error(
+                                    "Must specify at least one of 'files' or 'metrics' for host ('",
                                     hostName, "')");
                                 return false;
                             }

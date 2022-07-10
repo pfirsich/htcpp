@@ -8,22 +8,35 @@
 class HostHandler {
 public:
     HostHandler(IoQueue& io, FileCache& fileCache,
-        std::unordered_map<std::string, Config::Service::Host> config);
+        const std::unordered_map<std::string, Config::Service::Host>& config);
 
     HostHandler(const HostHandler& other);
 
     void operator()(const Request& request, std::shared_ptr<Responder> responder) const;
 
 private:
-    void metrics(const Request&, std::shared_ptr<Responder> responder) const;
+    struct FilesEntry {
+        std::string urlPath;
+        std::string fsPath;
+        bool isDirectory = false;
+    };
 
-    void files(const Request& request, std::shared_ptr<Responder> responder,
-        const std::string& root) const;
+    struct Host {
+        std::string name;
+        std::vector<FilesEntry> files;
+        std::optional<std::string> metrics;
+    };
 
     static std::string getMimeType(const std::string& fileExt);
 
+    void metrics(const Request&, std::shared_ptr<Responder> responder) const;
+
+    void files(const Request& request, std::shared_ptr<Responder> responder,
+        const std::vector<FilesEntry>& root) const;
+
+    void respondFile(const std::string& path, std::shared_ptr<Responder> responder) const;
+
     IoQueue& io_;
     FileCache& fileCache_;
-    std::unordered_map<std::string, Config::Service::Host> config_;
-    Config::Service::Host* defaultHost_ = nullptr;
+    std::vector<Host> hosts_;
 };

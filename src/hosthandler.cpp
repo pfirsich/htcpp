@@ -1,34 +1,83 @@
 #include "hosthandler.hpp"
 
+#include <filesystem>
+
 #include <cpprom/cpprom.hpp>
 
 #include "log.hpp"
+#include "string.hpp"
+
+namespace {
+std::string_view toString(std::filesystem::file_type status)
+{
+    switch (status) {
+    case std::filesystem::file_type::none:
+        return "none";
+    case std::filesystem::file_type::not_found:
+        return "not found";
+    case std::filesystem::file_type::regular:
+        return "file";
+    case std::filesystem::file_type::directory:
+        return "directory";
+    case std::filesystem::file_type::symlink:
+        return "symlink";
+    case std::filesystem::file_type::block:
+        return "block device";
+    case std::filesystem::file_type::character:
+        return "character device";
+    case std::filesystem::file_type::fifo:
+        return "fifo";
+    case std::filesystem::file_type::socket:
+        return "socket";
+    case std::filesystem::file_type::unknown:
+        return "unknown";
+    default:
+        return "invalid";
+    }
+}
+}
 
 HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
-    std::unordered_map<std::string, Config::Service::Host> config)
+    const std::unordered_map<std::string, Config::Service::Host>& config)
     : io_(io)
     , fileCache_(fileCache)
-    , config_(config)
 {
-    const auto it = config_.find("*");
-    if (it != config_.end()) {
-        defaultHost_ = &it->second;
+    for (const auto& [name, host] : config) {
+        hosts_.emplace_back();
+        hosts_.back().name = name;
+        for (const auto& [urlPath, fsPath] : host.files) {
+            const auto canonical = std::filesystem::canonical(fsPath); // Follow symlinks
+            const auto type = std::filesystem::status(canonical).type();
+            const auto severity = type == std::filesystem::file_type::regular
+                    || type == std::filesystem::file_type::directory
+                ? slog::Severity::Debug
+                : slog::Severity::Warning;
+            slog::log(
+                severity, name, ": '", urlPath, "' -> '", canonical, "' (", toString(type), ")");
+            hosts_.back().files.push_back(
+                FilesEntry { urlPath, fsPath, type == std::filesystem::file_type::directory });
+        }
+        hosts_.back().metrics = host.metrics;
     }
 }
 
 HostHandler::HostHandler(const HostHandler& other)
-    : HostHandler(other.io_, other.fileCache_, other.config_)
+    : io_(other.io_)
+    , fileCache_(other.fileCache_)
+    , hosts_(other.hosts_)
 {
 }
 
 void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> responder) const
 {
-    const Config::Service::Host* host = defaultHost_;
+    const Host* host = nullptr;
     const auto hostHeader = request.headers.get("Host");
-    if (hostHeader) {
-        const auto it = config_.find(std::string(*hostHeader));
-        if (it != config_.end()) {
-            host = &it->second;
+    for (const auto& h : hosts_) {
+        if (hostHeader && h.name == *hostHeader) {
+            host = &h;
+            break;
+        } else if (h.name == "*") {
+            host = &h;
         }
     }
 
@@ -46,10 +95,8 @@ void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> 
 
     if (host->metrics && request.url.path == *host->metrics) {
         metrics(request, std::move(responder));
-    } else if (host->root) {
-        files(request, std::move(responder), *host->root);
     } else {
-        responder->respond(Response(StatusCode::NotFound, "Not Found"));
+        files(request, std::move(responder), host->files);
     }
 }
 
@@ -66,12 +113,26 @@ void HostHandler::metrics(const Request&, std::shared_ptr<Responder> responder) 
         });
 }
 
-void HostHandler::files(
-    const Request& request, std::shared_ptr<Responder> responder, const std::string& root) const
+void HostHandler::files(const Request& request, std::shared_ptr<Responder> responder,
+    const std::vector<FilesEntry>& files) const
 {
-    // url.path must start with a '/' (verified in Url::parse)
-    const auto path = root + std::string(request.url.path);
-    const auto f = fileCache_.get(std::string(path));
+    for (const auto& entry : files) {
+        if (entry.isDirectory && startsWith(request.url.path, entry.urlPath)) {
+            // url.path must start with a '/' (verified in Url::parse)
+            const auto path = entry.fsPath + std::string(request.url.path);
+            respondFile(path, std::move(responder));
+            return;
+        } else if (request.url.path == entry.urlPath) {
+            respondFile(entry.fsPath, std::move(responder));
+            return;
+        }
+    }
+    responder->respond(Response(StatusCode::NotFound, "Not Found"));
+}
+
+void HostHandler::respondFile(const std::string& path, std::shared_ptr<Responder> responder) const
+{
+    const auto f = fileCache_.get(path);
     if (!f) {
         responder->respond(Response(StatusCode::NotFound, "Not Found"));
         return;
@@ -86,6 +147,7 @@ std::string HostHandler::getMimeType(const std::string& fileExt)
     static std::unordered_map<std::string, std::string> mimeTypes {
         { "jpg", "image/jpeg" },
         { "html", "text/html" },
+        { "png", "image/png" },
     };
     const auto it = mimeTypes.find(fileExt);
     if (it == mimeTypes.end()) {
