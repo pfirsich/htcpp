@@ -277,17 +277,17 @@ private:
             // I also prefer the member variable compared to moving it into the lambda, because
             // it can be reused for another request in this session.
             responseBuffer_ = std::move(response);
-            connection_.send(responseBuffer_.data(), responseBuffer_.size(),
-                [this, self = this->shared_from_this(), keepAlive, size = responseBuffer_.size()](
-                    std::error_code ec, int sentBytes) {
-                    const auto method = toString(request_.method);
-                    const auto status = std::to_string(static_cast<int>(response_.status));
-                    Metrics::get()
-                        .reqDuration.labels(method, request_.url.path)
-                        .observe(cpprom::now() - requestStart_);
-                    Metrics::get().respTotal.labels(method, request_.url.path, status).inc();
-                    Metrics::get().respSize.labels(method, request_.url.path, status).observe(size);
+            responseSendOffset_ = 0;
+            keepAlive_ = keepAlive;
+            sendResponse();
+        }
 
+        void sendResponse()
+        {
+            assert(responseSendOffset_ < responseBuffer_.size());
+            connection_.send(responseBuffer_.data() + responseSendOffset_,
+                responseBuffer_.size() - responseSendOffset_,
+                [this, self = this->shared_from_this()](std::error_code ec, int sentBytes) {
                     if (ec) {
                         // I think there are no errors, where we want to shutdown.
                         // Note that ec could be an error that can not be returned by ::send,
@@ -307,14 +307,25 @@ private:
                         return;
                     }
 
-                    if (sentBytes < static_cast<int>(size)) {
-                        // This should not happen with blocking sockets.
-                        slog::error("Incomplete send: ", sentBytes, "/", size);
-                        connection_.close();
+                    assert(sentBytes > 0);
+                    if (responseSendOffset_ + sentBytes < responseBuffer_.size()) {
+                        responseSendOffset_ += sentBytes;
+                        sendResponse();
                         return;
                     }
 
-                    if (keepAlive) {
+                    // Only step these counters for successful sends
+                    const auto method = toString(request_.method);
+                    const auto status = std::to_string(static_cast<int>(response_.status));
+                    Metrics::get()
+                        .reqDuration.labels(method, request_.url.path)
+                        .observe(cpprom::now() - requestStart_);
+                    Metrics::get().respTotal.labels(method, request_.url.path, status).inc();
+                    Metrics::get()
+                        .respSize.labels(method, request_.url.path, status)
+                        .observe(responseBuffer_.size());
+
+                    if (keepAlive_) {
                         start();
                     } else {
                         shutdown();
@@ -348,6 +359,8 @@ private:
         cpprom::Gauge::TrackInProgressHandle trackInProgressHandle_;
         double requestStart_;
         const Config::Server& serverConfig_;
+        size_t responseSendOffset_ = 0;
+        bool keepAlive_;
     };
 
     void accept()
