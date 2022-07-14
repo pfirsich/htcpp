@@ -43,11 +43,9 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 
 ## To Do (Must)
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
-* SQPOLL to decrease syscalls/context switches
 * TLS SNI (then move `tls` object into `hosts`)
 * auto-rewrite (append .html, / -> index.html)
 * Configure MIME Types in config
-* Signal handling so it works better in Docker
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
 * Make it work with certbot: Now that I have reloading of certificates and I can configure multiple sites (to host `.well-known/acme-challenge` on port 80), I think I have everything that I need.
 * Make file reading asynchronous (there are a bunch of problem with this though)
@@ -62,6 +60,7 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
     - Add concurrency limit (max number of concurrent connections)
     - Read timeout (see above)
 * URL percent decoding (didn't need it yet)
+* Currently the response body is copied from the response object (argument to respond) to the responseBuffer before sending. Somehow avoid this copy. (send header and body separately?).
 
 ## To Do (Could)
 * Large file transfer (with `sendfile` or `slice`)
@@ -75,6 +74,8 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 * (after HTTP Client) Reverse proxy mode
 * Customizable access log: Have the option to include some request headers, like Referer or User-Agent
 * LuaJIT for scripting dynamic websites
+* Request pool/arena allocator (only allocate a big buffer once per request and use it as the backing memory for an arena allocator)
+* Signal handling so it works better in Docker (just use `--init`)
 
 ## Won't Do (for now?)
 * Compression: Afaik you are supposed to disable it for images and other already compressed assets (obviously), but since I only plan to serve small HTML pages with this, there is not much use.
