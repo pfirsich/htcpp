@@ -49,6 +49,12 @@ bool Config::loadFromFile(const std::string& path)
                 return false;
             }
             copy.ioQueueSize = static_cast<size_t>(qs);
+        } else if (key == "io_submission_queue_polling") {
+            if (!value.is<joml::Node::Bool>()) {
+                slog::error("'io_submission_queue_polling' must be a boolean");
+                return false;
+            }
+            copy.ioSubmissionQueuePolling = value.as<joml::Node::Bool>();
         } else if (key == "services") {
             if (!value.is<joml::Node::Dictionary>()) {
                 slog::error("'services' must be a dictionary");

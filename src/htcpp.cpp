@@ -82,7 +82,7 @@ int main(int argc, char** argv)
     }
 #endif
 
-    IoQueue io(config.ioQueueSize);
+    IoQueue io(config.ioQueueSize, config.ioSubmissionQueuePolling);
 
     // We share a file cache, because we don't need multiple and if we made it a member of
     // HostHandler, HostHandler would not be copyable anymore, which it needs to be to be part of

@@ -25,10 +25,10 @@ void IoQueue::setAbsoluteTimeout(Timespec* ts, uint64_t milliseconds)
     ts->tv_nsec = ts->tv_nsec % (1000 * 1000 * 1000);
 }
 
-IoQueue::IoQueue(size_t size)
+IoQueue::IoQueue(size_t size, bool submissionQueuePolling)
     : completionHandlers_(size)
 {
-    if (!ring_.init(size, true)) {
+    if (!ring_.init(size, submissionQueuePolling)) {
         slog::fatal("Could not create io_uring: ", errnoToString(errno));
         std::exit(1);
     }

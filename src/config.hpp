@@ -47,6 +47,7 @@ struct Config {
     };
 
     size_t ioQueueSize = 2048; // power of two, >= 1, <= 4096
+    bool ioSubmissionQueuePolling = true;
 
     std::vector<Service> services;
 

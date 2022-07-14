@@ -13,7 +13,9 @@ Currently it has the following features:
 * The only dependency that is not another project of mine is OpenSSL (of course exclusing the Linux Kernel, glibc and the standard library).
 * [JOML](https://github.com/pfirsich/joml) configuration files ([minimal](./config-minimal.joml), [tls](./config-tls.joml), [multisite](./config-multisite.joml))
 
-It requires io_uring features that are available since kernel 5.5, so it will exit immediately on earlier kernels.
+It requires io_uring features that are available since kernel 5.11, so it will exit immediately on earlier kernels.
+
+Also if submission queue polling (config: `io_submission_queue_polling` (boolean)) is enabled, which it is by default, htcpp needs to run as root it needs the `CAP_SYS_NICE` capability.
 
 ## Building
 Install [meson](https://mesonbuild.com/).

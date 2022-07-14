@@ -27,7 +27,7 @@ public:
     static void setRelativeTimeout(Timespec* ts, uint64_t milliseconds);
     static void setAbsoluteTimeout(Timespec* ts, uint64_t milliseconds);
 
-    IoQueue(size_t size = 1024);
+    IoQueue(size_t size = 1024, bool submissionQueuePolling = false);
 
     size_t getSize() const;
 
