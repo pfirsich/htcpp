@@ -26,6 +26,21 @@ meson compile -C build
 
 If OpenSSL can be found during the build, TLS support is automatically enabled. The build will fail for OpenSSL versions earlier than `1.1.1`.
 
+## Docker
+Alternatively you can build a Docker container:
+```shell
+meson subprojects download # initial build
+meson subprojects update # subsequent builds
+docker build --tag htcpp .
+```
+Adjust the tag to whatever you prefer.
+
+Then run it like this:
+```
+docker run --init --network=host htcpp <args>
+```
+The `--init` is necessary for the container to terminate gracefully. You can replace `--network=host` with an explicit port forwarding, but host networking gives better performance.
+
 ## To Do (Must)
 * **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
 * SQPOLL to decrease syscalls/context switches
