@@ -28,7 +28,7 @@ void IoQueue::setAbsoluteTimeout(Timespec* ts, uint64_t milliseconds)
 IoQueue::IoQueue(size_t size)
     : completionHandlers_(size)
 {
-    if (!ring_.init(size)) {
+    if (!ring_.init(size, true)) {
         slog::fatal("Could not create io_uring: ", errnoToString(errno));
         std::exit(1);
     }
