@@ -218,29 +218,6 @@ std::string toString(SslOperation op)
     }
 }
 
-int SslOperationFunc<SslOperation::Read>::operator()(SSL* ssl, void* buffer, int length)
-{
-    return SSL_read(ssl, buffer, length);
-}
-
-int SslOperationFunc<SslOperation::Write>::operator()(SSL* ssl, void* buffer, int length)
-{
-    return SSL_write(ssl, const_cast<const void*>(buffer), length);
-}
-
-int SslOperationFunc<SslOperation::Shutdown>::operator()(SSL* ssl, void*, int)
-{
-    // If SSL_shutdown returns 0, you are supposed to not call SSL_get_error and SSL_read
-    // all remaining data, then SSL_shutdown again.
-    // This is a bit awkward to fit into the rest of the code,
-    // so I borrow this from boost asio as well.
-    auto result = SSL_shutdown(ssl);
-    if (result == 0) {
-        result = SSL_shutdown(ssl);
-    }
-    return result;
-}
-
 SslConnection::SslConnection(IoQueue& io, int fd, std::shared_ptr<SslContext> context)
     : TcpConnection(io, fd)
     , ssl_(SSL_new(*context))
@@ -296,114 +273,168 @@ SslConnection::SslConnection(SslConnection&& other)
 
 void SslConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
-    performSslOperation<SslOperation::Read>(buffer, len, std::move(handler));
+    startSslOperation(SslOperation::Read, buffer, len, std::move(handler));
 }
 
 void SslConnection::send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
     // This const_cast is okay, because before this buffer is accessed, it's const_cast back to
     // `const void*` again.
-    performSslOperation<SslOperation::Write>(const_cast<void*>(buffer), len, std::move(handler));
+    startSslOperation(SslOperation::Write, const_cast<void*>(buffer), len, std::move(handler));
 }
 
 void SslConnection::shutdown(IoQueue::HandlerEc handler)
 {
-    performSslOperation<SslOperation::Shutdown>(
-        nullptr, 0, [handler = std::move(handler)](std::error_code ec, int) { handler(ec); });
+    startSslOperation(SslOperation::Shutdown, nullptr, 0,
+        [handler = std::move(handler)](std::error_code ec, int) { handler(ec); });
 }
 
-template <SslOperation Op>
-void SslConnection::performSslOperation(void* buffer, size_t length, IoQueue::HandlerEcRes handler)
+SslConnection::SslOperationResult SslConnection::performSslOperation(
+    SslOperation op, SSL* ssl, void* buffer, int length)
 {
-    // We do not handle incomplete reads or writes here at all
-
-    // Make sure the SSL_get_error below gives us the most recent error
+    // Make sure the SSL_get_error below this gives us the most recent error
     ::ERR_clear_error();
-    const auto sslResult = SslOperationFunc<Op> {}(ssl_, buffer, length);
-    const auto sslError = SSL_get_error(ssl_, sslResult);
 
+    int result = 0;
+    switch (op) {
+    case SslOperation::Read:
+        result = SSL_read(ssl, buffer, length);
+        break;
+    case SslOperation::Write:
+        result = SSL_write(ssl, const_cast<const void*>(buffer), length);
+        break;
+    case SslOperation::Shutdown: {
+        // If SSL_shutdown returns 0, you are supposed to not call SSL_get_error and SSL_read
+        // all remaining data, then SSL_shutdown again.
+        // This is a bit awkward to fit into the rest of the code,
+        // so I borrow this from boost asio as well.
+        result = SSL_shutdown(ssl);
+        if (result == 0) {
+            result = SSL_shutdown(ssl);
+        }
+        break;
+    }
+    default:
+        std::abort();
+    }
+
+    const auto error = SSL_get_error(ssl, result);
+
+    ::ERR_clear_error();
+
+    return SslOperationResult { result, error };
+}
+
+void SslConnection::performSslOperation()
+{
+    const auto res = performSslOperation(state_.currentOp, ssl_, state_.buffer, state_.length);
+    state_.lastResult = res.result;
+    state_.lastError = res.error;
+    processSslOperationResult(res);
+}
+
+void SslConnection::startSslOperation(
+    SslOperation op, void* buffer, int length, IoQueue::HandlerEcRes handler)
+{
+    state_ = SslOperationState { std::move(handler), op, buffer, length };
+    performSslOperation();
+}
+
+void SslConnection::updateSslOperation()
+{
+    if (state_.lastError == SSL_ERROR_NONE) {
+        completeSslOperation(std::error_code {}, state_.lastResult);
+    } else if (state_.lastError == SSL_ERROR_ZERO_RETURN) {
+        completeSslOperation(std::error_code {}, 0);
+    } else {
+        performSslOperation();
+    }
+}
+
+void SslConnection::completeSslOperation(std::error_code ec, int result)
+{
+    auto handler = std::move(state_.handler);
+    // Handler needs to be released, so the Session can die, but we have to do it before we call the
+    // handler, because it might start another SSL operation and we don't want to discard it
+    // immediately.
+    state_ = SslOperationState {};
+    handler(ec, result);
+}
+
+void SslConnection::processSslOperationResult(const SslOperationResult& result)
+{
     // Number of bytes that are waiting to be sent
     const auto pending = BIO_ctrl_pending(externalBio_);
 
-    if (sslError == SSL_ERROR_NONE) {
-        // TODO: HANDLE pending
-        handler(std::error_code {}, sslResult);
-    } else if (sslError == SSL_ERROR_ZERO_RETURN) {
-        // TODO: HANDLE pending
-        // The remote peer closed the connection.
-        handler(std::error_code {}, 0);
-    } else if (pending > 0 || sslError == SSL_ERROR_WANT_WRITE) {
-        // If we can read or write (pending > 0 and SSL_ERROR_WANT_READ), we rather write,
-        // because then we can proceed quicker (writing should mostly finish quicker than
-        // reading).
-        const auto readFromBio = BIO_read(externalBio_, sendBuffer_.data(), sendBuffer_.size());
-        // Why would OpenSSL say WANT_WRITE if it has nothing to write?
-        assert(readFromBio > 0);
-        // We make sure the Session is kept alive by capturing handler (which we need to do
-        // anyways)
-        io_.send(fd_, sendBuffer_.data(), readFromBio,
-            [this, buffer, length, handler = std::move(handler), readFromBio](
-                std::error_code ec, int sentBytes) {
-                if (ec) {
-                    slog::debug("Error in send (SSL): ", ec.message());
-                    // Because a read error would result in a SSL_ERROR_SYSCALL if OpenSSL did
-                    // the syscalls itself, we also should not call SSL_shutdown.
-                    handler(ec, -1);
-                    return;
-                }
-
-                if (sentBytes == 0) {
-                    handler(std::error_code {}, 0);
-                    return;
-                }
-
-                assert(readFromBio == sentBytes);
-                performSslOperation<Op>(buffer, length, std::move(handler));
-            });
-    } else if (sslError == SSL_ERROR_WANT_READ) {
-        io_.recv(fd_, recvBuffer_.data(), recvBuffer_.size(),
-            [this, buffer, length, handler = std::move(handler)](
-                std::error_code ec, int readBytes) {
-                if (ec) {
-                    slog::debug("Error in recv (SSL): ", ec.message());
-                    // See branch for SSL_ERROR_WANT_WRITE
-                    handler(ec, -1);
-                    return;
-                }
-
-                if (readBytes == 0) {
-                    handler(std::error_code {}, 0);
-                    return;
-                }
-
-                BIO_write(externalBio_, recvBuffer_.data(), readBytes);
-                performSslOperation<Op>(buffer, length, std::move(handler));
-            });
-    } else if (sslError == SSL_ERROR_SSL || sslError == SSL_ERROR_SYSCALL) {
+    if (result.error == SSL_ERROR_SSL || result.error == SSL_ERROR_SYSCALL) {
         // https://www.openssl.org/docs/man1.1.1/man3/SSL_get_error.html
         // "non-recoverable fatal error"
         // "no further I/O operations should be performed on the connection and SSL_shutdown
         // must not be called"
         const auto ec = OpenSslErrorCategory::makeError(ERR_peek_error());
-        slog::debug("SSL Error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
-            getSslErrorString());
-        handler(ec, -1);
+        slog::debug("SSL Error ", sslErrorToString(result.error), " in ",
+            toString(state_.currentOp), ": ", getSslErrorString());
+        completeSslOperation(ec, -1);
+    } else if (pending > 0 || result.error == SSL_ERROR_WANT_WRITE) {
+        // Even if we are finished (SSL_ERROR_NONE, SSL_ERROR_ZERO_RETURN), we need to send out the
+        // pending bytes.
+        // If we can read or write (pending > 0 and SSL_ERROR_WANT_READ), we rather
+        // write, because then we can proceed quicker (writing should mostly finish quicker than
+        // reading).
+        const auto readFromBio = BIO_read(externalBio_, sendBuffer_.data(), sendBuffer_.size());
+        // Why would OpenSSL say WANT_WRITE if it has nothing to write?
+        assert(readFromBio > 0);
+        // This assert is preliminary
+        assert(pending == static_cast<size_t>(readFromBio));
+
+        io_.send(fd_, sendBuffer_.data(), readFromBio,
+            [this, readFromBio](std::error_code ec, int sentBytes) {
+                if (ec) {
+                    slog::debug("Error in send (SSL): ", ec.message());
+                    // Because a read error would result in a SSL_ERROR_SYSCALL if OpenSSL did
+                    // the syscalls itself, we also should not call SSL_shutdown.
+                    completeSslOperation(ec, -1);
+                    return;
+                }
+
+                if (sentBytes == 0) {
+                    completeSslOperation(std::error_code {}, 0);
+                    return;
+                }
+
+                assert(readFromBio == sentBytes);
+                updateSslOperation();
+            });
+    } else if (result.error == SSL_ERROR_WANT_READ) {
+        io_.recv(
+            fd_, recvBuffer_.data(), recvBuffer_.size(), [this](std::error_code ec, int readBytes) {
+                if (ec) {
+                    slog::debug("Error in recv (SSL): ", ec.message());
+                    // See branch for SSL_ERROR_WANT_WRITE
+                    completeSslOperation(ec, -1);
+                    return;
+                }
+
+                if (readBytes == 0) {
+                    completeSslOperation(std::error_code {}, 0);
+                    return;
+                }
+
+                BIO_write(externalBio_, recvBuffer_.data(), readBytes);
+                updateSslOperation();
+            });
+    } else if (result.error == SSL_ERROR_NONE) {
+        completeSslOperation(std::error_code {}, result.result);
+    } else if (result.error == SSL_ERROR_ZERO_RETURN) {
+        // The remote peer closed the connection.
+        completeSslOperation(std::error_code {}, 0);
     } else {
         const auto ec = OpenSslErrorCategory::makeError(ERR_peek_error());
-        slog::error("Unexpected SSL error ", sslErrorToString(sslError), " in ", toString(Op), ": ",
-            getSslErrorString());
-        handler(ec, -1);
+        slog::error("Unexpected SSL error ", sslErrorToString(result.error), " in ",
+            toString(state_.currentOp), ": ", getSslErrorString());
+        completeSslOperation(ec, -1);
     }
-
-    ::ERR_clear_error();
 }
-
-template void SslConnection::performSslOperation<SslOperation::Read>(
-    void* buffer, size_t length, IoQueue::HandlerEcRes handler);
-template void SslConnection::performSslOperation<SslOperation::Write>(
-    void* buffer, size_t length, IoQueue::HandlerEcRes handler);
-template void SslConnection::performSslOperation<SslOperation::Shutdown>(
-    void* buffer, size_t length, IoQueue::HandlerEcRes handler);
 
 SslConnectionFactory::SslConnectionFactory(
     IoQueue& io, std::string certChainPath, std::string keyPath)

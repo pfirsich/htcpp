@@ -7,7 +7,7 @@ services: {
 
         hosts: {
             "*": {
-                root: "."
+                files: "."
             }
         }
     }

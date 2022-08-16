@@ -74,33 +74,15 @@ public:
 
 OpenSslErrorCategory& getOpenSslErrorCategory();
 
-enum class SslOperation { Read, Write, Shutdown };
+enum class SslOperation { Invalid = 0, Read, Write, Shutdown };
 std::string toString(SslOperation op);
-
-template <SslOperation Op>
-struct SslOperationFunc;
-
-template <>
-struct SslOperationFunc<SslOperation::Read> {
-    int operator()(SSL* ssl, void* buffer, int length);
-};
-
-template <>
-struct SslOperationFunc<SslOperation::Write> {
-    int operator()(SSL* ssl, void* buffer, int length);
-};
-
-template <>
-struct SslOperationFunc<SslOperation::Shutdown> {
-    int operator()(SSL* ssl, void*, int);
-};
 
 // This whole thing is *heavily* inspired by what Boost ASIO is doing
 class SslConnection : public TcpConnection {
 public:
     SslConnection(IoQueue& io, int fd, std::shared_ptr<SslContext> context);
-    // Note: This class is not actually movable (because it's captured in lambdas), but it can be
-    // moved before any operation is done on it. And we need that.
+    // Note: This class is not actually movable (because it's `this` pointer is captured in
+    // lambdas), but it can be moved before any operation is done on it and we need that.
     SslConnection(SslConnection&&);
     ~SslConnection();
 
@@ -115,13 +97,36 @@ public:
     void shutdown(IoQueue::HandlerEc handler);
 
 private:
-    template <SslOperation Op>
-    void performSslOperation(void* buffer, size_t length, IoQueue::HandlerEcRes handler);
+    struct SslOperationResult {
+        int result;
+        int error;
+    };
+
+    // There is only one of these, but I think it's nicer to contain it
+    struct SslOperationState {
+        IoQueue::HandlerEcRes handler = nullptr;
+        SslOperation currentOp = SslOperation::Invalid;
+        void* buffer = nullptr;
+        int length = 0;
+        int lastResult = 0;
+        int lastError = 0;
+    };
+
+    static SslOperationResult performSslOperation(
+        SslOperation op, SSL* ssl, void* buffer, int length);
+
+    void startSslOperation(
+        SslOperation op, void* buffer, int length, IoQueue::HandlerEcRes handler);
+    void performSslOperation();
+    void processSslOperationResult(const SslOperationResult& result);
+    void updateSslOperation();
+    void completeSslOperation(std::error_code ec, int result);
 
     SSL* ssl_;
     BIO* externalBio_ = nullptr;
     std::vector<char> recvBuffer_;
     std::vector<char> sendBuffer_;
+    SslOperationState state_;
 };
 
 struct SslConnectionFactory {

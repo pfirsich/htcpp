@@ -44,7 +44,6 @@ docker run --init --network=host htcpp <args>
 The `--init` is necessary for the container to terminate gracefully. You can replace `--network=host` with an explicit port forwarding, but host networking gives better performance.
 
 ## To Do (Must)
-* **Fix: Handle pending bytes to write for TLS correctly. Currently I complete an SSL operation even if there are pending bytes. I need a more elaborate state machine**.
 * TLS SNI (then move `tls` object into `hosts`)
 * auto-rewrite (append .html, / -> index.html)
 * Configure MIME Types in config
