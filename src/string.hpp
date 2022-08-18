@@ -14,6 +14,8 @@ bool isHttpWhitespace(char c);
 
 std::vector<std::string_view> split(std::string_view str, char delim);
 
+std::string_view httpTrim(std::string_view str);
+
 bool startsWith(std::string_view str, std::string_view start);
 
 template <typename T = uint64_t>

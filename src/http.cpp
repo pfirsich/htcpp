@@ -281,15 +281,7 @@ std::optional<Request> Request::parse(std::string_view requestStr)
                 return std::nullopt;
             }
             const auto name = line.substr(0, colon);
-            auto valueStart = colon + 1;
-            while (valueStart < line.size() && isHttpWhitespace(line[valueStart])) {
-                valueStart++;
-            }
-            auto valueEnd = valueStart;
-            while (valueEnd < line.size() && !isHttpWhitespace(line[valueEnd])) {
-                valueEnd++;
-            }
-            const auto value = line.substr(valueStart, valueEnd - valueStart);
+            const auto value = httpTrim(line.substr(colon + 1));
             req.headers.add(name, value);
             headerLineStart = headerLineEnd + 2;
         }
@@ -314,6 +306,11 @@ Response::Response(std::string body, std::string_view contentType)
 Response::Response(StatusCode status, std::string body)
     : status(status)
     , body(std::move(body))
+{
+}
+
+Response::Response(StatusCode status)
+    : status(status)
 {
 }
 

@@ -203,6 +203,8 @@ struct Response {
 
     Response(std::string body, std::string_view contentType);
 
+    Response(StatusCode status);
+
     Response(StatusCode status, std::string body);
 
     Response(StatusCode status, std::string body, std::string_view contentType);

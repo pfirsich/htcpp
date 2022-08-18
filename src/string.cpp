@@ -1,6 +1,7 @@
 #include "string.hpp"
 
 #include <array>
+#include <cassert>
 
 constexpr std::array<char, 256> getToLowerTable()
 {
@@ -53,6 +54,29 @@ std::vector<std::string_view> split(std::string_view str, char delim)
     }
     parts.push_back(str.substr(i));
     return parts;
+}
+
+std::string_view httpTrim(std::string_view str)
+{
+    if (str.empty()) {
+        return str;
+    }
+
+    size_t start = 0;
+    while (start < str.size() && isHttpWhitespace(str[start])) {
+        start++;
+    }
+    if (start == str.size()) {
+        return str.substr(start, 0);
+    }
+    assert(start < str.size());
+
+    auto end = str.size() - 1;
+    while (end > start && isHttpWhitespace(str[end])) {
+        end--;
+    }
+
+    return str.substr(start, end + 1 - start);
 }
 
 bool startsWith(std::string_view str, std::string_view start)

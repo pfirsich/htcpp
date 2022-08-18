@@ -11,24 +11,25 @@
 // but block on the first load.
 class FileCache {
 public:
+    struct Entry {
+        std::string path;
+        std::optional<std::string> contents = std::nullopt;
+        std::string eTag = "";
+        bool dirty = true;
+
+        void reload();
+    };
+
     FileCache(IoQueue& io);
 
     // As this server is fully single-threaded, we can get away with returning a reference
     // because the reference might only be invalidated after the handler that is using it
     // has finished. If this server was multi-threaded we should return shared_ptr here instead.
     // If std::optional<T&> was a thing, I would return that instead.
-    const std::string* get(const std::string& path);
+    const Entry* get(const std::string& path);
 
 private:
-    struct File {
-        std::string path;
-        std::optional<std::string> contents = std::nullopt;
-        bool dirty = true;
-
-        void reload();
-    };
-
     IoQueue& io_;
     FileWatcher fileWatcher_;
-    std::unordered_map<std::string, File> files_;
+    std::unordered_map<std::string, Entry> entries_;
 };

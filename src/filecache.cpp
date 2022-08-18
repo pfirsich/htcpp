@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include <sys/stat.h>
+
 #include "log.hpp"
 #include "metrics.hpp"
 #include "util.hpp"
@@ -16,24 +18,28 @@ FileCache::FileCache(IoQueue& io)
 // because the reference might only be invalidated after the handler that is using it
 // has finished. If this server was multi-threaded we should return shared_ptr here instead.
 // If std::optional<T&> was a thing, I would return that instead.
-const std::string* FileCache::get(const std::string& path)
+const FileCache::Entry* FileCache::get(const std::string& path)
 {
     Metrics::get().fileCacheQueries.labels(path).inc();
-    auto it = files_.find(path);
-    if (it == files_.end()) {
-        it = files_.emplace(path, File { path }).first;
+    auto it = entries_.find(path);
+    if (it == entries_.end()) {
+        it = entries_.emplace(path, Entry { path }).first;
         fileWatcher_.watch(path, [this](std::error_code ec, std::string_view path) {
             if (ec) {
-                files_.erase(std::string(path));
+                entries_.erase(std::string(path));
                 return;
             }
             slog::info("file changed: '", path, "'");
-            files_.at(std::string(path)).dirty = true;
+            entries_.at(std::string(path)).dirty = true;
         });
     }
 
     if (it->second.dirty) {
         it->second.reload();
+        // Reset dirty either way (error or not), so that we don't repeatedly try to load a file
+        // that e.g. does not exist.
+        // We wait for another modification before we try again.
+        it->second.dirty = false;
     } else {
         Metrics::get().fileCacheHits.labels(path).inc();
     }
@@ -42,18 +48,55 @@ const std::string* FileCache::get(const std::string& path)
         Metrics::get().fileCacheFailures.labels(path).inc();
         return nullptr;
     }
-    return &*it->second.contents;
+    return &it->second;
 }
 
-void FileCache::File::reload()
+void FileCache::Entry::reload()
 {
     slog::info("reload file: '", path, "'");
     const auto cont = readFile(path);
-    if (cont) {
-        contents = *cont;
+    if (!cont) {
+        // Error already logged
+        return;
     }
-    // Reset dirty either way, so that we don't repeatedly try to load a file that e.g. does
-    // not exist.
-    // We wait for another modification before we try again.
-    dirty = false;
+
+    // Using mtime and size is very popular. This is used by Apache, binserve, Caddy, lighthttpd,
+    // and nginx. Sometimes the inode is included, but I don't think it's very necessary and can
+    // lead to problems if the files are served from multiple instances of a server (e.g. behind a
+    // load balancer):
+    // https://github.com/caddyserver/caddy/pull/1435/files
+    // https://serverfault.com/a/690374
+
+    // Also there is a very improbable vulnerabilty in including the inode, which I have no trouble
+    // ignoring, but I don't want anyone to *ever* open an issue for this, so I just leave it out
+    // from the start:
+    // https://www.pentestpartners.com/security-blog/vulnerabilities-that-arent-etag-headers/
+
+    // https://www.rfc-editor.org/rfc/rfc7232#section-2.1 distinguishes between strong and weak
+    // validators and this is not actually a strong validator, but it is still specified as a strong
+    // validator, because weak don't do anything for partial content (which I do not support *yet*).
+    // Nginx and Caddy also do this.
+    // There is a TODO item for optionally using a cryptographic hash for the ETag.
+
+    // This is kind of race-ey, but I don't think there is much we can do reasonably.
+    // One way would be to read the file multiple times to check if the content changed after the
+    // stat, which I consider unreasonable.
+    struct ::stat st;
+    const auto statRes = ::stat(path.c_str(), &st);
+    if (statRes != 0) {
+        slog::error("Could not stat '", path, "': ", errnoToString(errno));
+        return;
+    }
+
+    // https://www.rfc-editor.org/rfc/rfc7232#section-2.3
+    // The ETag can be any number of double quoted characters in {0x21, 0x23-0x7E, 0x80-0xFF}
+    char eTagBuf[64] = { 0 }; // at most 32 chars (8 bytes and 8 bytes with 2 chars per byte)
+    // long st_size, long int st_mtime
+    if (std::sprintf(eTagBuf, "\"%lx-%lx\"", st.st_mtime, st.st_size) < 0) {
+        slog::error("Could not format ETag");
+        return;
+    }
+
+    eTag = eTagBuf;
+    contents = *cont;
 }

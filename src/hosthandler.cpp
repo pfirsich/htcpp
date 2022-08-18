@@ -120,26 +120,59 @@ void HostHandler::files(const Request& request, std::shared_ptr<Responder> respo
         if (entry.isDirectory && startsWith(request.url.path, entry.urlPath)) {
             // url.path must start with a '/' (verified in Url::parse)
             const auto path = entry.fsPath + std::string(request.url.path);
-            respondFile(path, std::move(responder));
+            respondFile(path, request, std::move(responder));
             return;
         } else if (request.url.path == entry.urlPath) {
-            respondFile(entry.fsPath, std::move(responder));
+            respondFile(entry.fsPath, request, std::move(responder));
             return;
         }
     }
     responder->respond(Response(StatusCode::NotFound, "Not Found"));
 }
 
-void HostHandler::respondFile(const std::string& path, std::shared_ptr<Responder> responder) const
+bool matchesAny(std::string_view eTag, std::string_view headerValue)
+{
+    // https://tools.ietf.org/html/rfc7232#section-3.2: "A recipient MUST use the weak
+    // comparison function when comparing entity-tags for If-None-Match"
+    // https://tools.ietf.org/html/rfc7232#section-2.3.2: "Weak comparison: two entity-tags are
+    // equivalent if their opaque-tags match character-by-character, regardless of either or
+    // both being tagged as "weak"
+    if (eTag.size() >= 2 && eTag.substr(0, 2) == "W/") {
+        eTag = eTag.substr(2);
+    }
+
+    const auto values = split(headerValue, ',');
+    for (const auto& value : values) {
+        auto trimmed = httpTrim(value);
+        if (trimmed.size() >= 2 && trimmed.substr(0, 2) == "W/") {
+            trimmed = trimmed.substr(2);
+        }
+        if (trimmed == "*" || eTag == trimmed) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void HostHandler::respondFile(
+    const std::string& path, const Request& request, std::shared_ptr<Responder> responder) const
 {
     const auto f = fileCache_.get(path);
     if (!f) {
         responder->respond(Response(StatusCode::NotFound, "Not Found"));
         return;
     }
+    const auto ifNoneMatch = request.headers.get("If-None-Match");
+    slog::debug("If-None-Match: ", ifNoneMatch.value_or("empty"));
+    if (ifNoneMatch && matchesAny(f->eTag, *ifNoneMatch)) {
+        responder->respond(Response(StatusCode::NotModified));
+        return;
+    }
     const auto extDelim = path.find_last_of('.');
     const auto ext = path.substr(std::min(extDelim + 1, path.size()));
-    responder->respond(Response(*f, getMimeType(std::string(ext))));
+    auto resp = Response(f->contents.value(), getMimeType(std::string(ext)));
+    resp.headers.add("ETag", f->eTag);
+    responder->respond(std::move(resp));
 }
 
 std::string HostHandler::getMimeType(const std::string& fileExt)

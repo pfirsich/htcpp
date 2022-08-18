@@ -80,7 +80,7 @@ int main()
             }
             const auto extDelim = path.find_last_of('.');
             const auto ext = path.substr(std::min(extDelim + 1, path.size()));
-            return Response(*f, getMimeType(std::string(ext)));
+            return Response(f->contents.value(), getMimeType(std::string(ext)));
         });
 
     router.route("/metrics",

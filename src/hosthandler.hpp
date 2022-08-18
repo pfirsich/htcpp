@@ -34,7 +34,8 @@ private:
     void files(const Request& request, std::shared_ptr<Responder> responder,
         const std::vector<FilesEntry>& root) const;
 
-    void respondFile(const std::string& path, std::shared_ptr<Responder> responder) const;
+    void respondFile(const std::string& path, const Request& request,
+        std::shared_ptr<Responder> responder) const;
 
     IoQueue& io_;
     FileCache& fileCache_;
