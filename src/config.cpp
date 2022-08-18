@@ -12,6 +12,45 @@ constexpr bool isPowerOfTwo(T v)
 {
     return v != 0 && (v & (v - 1)) == 0;
 }
+
+std::optional<std::string> substituteEnvVars(std::string_view source)
+{
+    std::string ret;
+    size_t cursor = 0;
+    while (cursor < source.size()) {
+        const auto start = source.find("${", cursor);
+        ret.append(source.substr(cursor, start - cursor));
+        if (start == std::string_view::npos) {
+            break;
+        }
+
+        const auto end = source.find("}", start);
+        if (end == std::string_view::npos) {
+            slog::error("Unmatched environment variable expansion");
+            return std::nullopt;
+        }
+
+        const auto arg = source.substr(start + 2, end - start - 2);
+        const auto colon = arg.find(':');
+        const auto var = std::string(colon == std::string_view::npos ? arg : arg.substr(0, colon));
+        const auto defaultValue = colon == std::string_view::npos
+            ? std::optional<std::string_view> { std::nullopt }
+            : std::optional<std::string_view> { arg.substr(colon + 1) };
+
+        const auto envValue = ::getenv(var.c_str());
+        if (envValue) {
+            ret.append(envValue);
+        } else if (defaultValue) {
+            ret.append(*defaultValue);
+        } else {
+            slog::error("Environment variable '", var, "' is not defined.");
+            return std::nullopt;
+        }
+
+        cursor = end + 1;
+    }
+    return ret;
+}
 }
 
 // Without all this generic schema stuff, this would be even larger and more complicated and more
@@ -24,11 +63,16 @@ bool Config::loadFromFile(const std::string& path)
         return false;
     }
 
-    const auto joml = joml::parse(*source);
+    const auto substSource = substituteEnvVars(*source);
+    if (!substSource) {
+        return false;
+    }
+
+    const auto joml = joml::parse(*substSource);
     if (!joml) {
         const auto err = joml.error();
         slog::error("Could not parse JOML config: ", err.string(), "\n",
-            joml::getContextString(*source, err.position));
+            joml::getContextString(*substSource, err.position));
         return false;
     }
 
