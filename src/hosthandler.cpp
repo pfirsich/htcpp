@@ -145,10 +145,18 @@ void HostHandler::respondFile(
         responder->respond(Response(StatusCode::NotModified));
         return;
     }
+
+    const auto ifModifiedSince = request.headers.get("If-Modified-Since");
+    if (ifModifiedSince && f->lastModified == *ifModifiedSince) {
+        responder->respond(Response(StatusCode::NotModified));
+        return;
+    }
+
     const auto extDelim = path.find_last_of('.');
     const auto ext = path.substr(std::min(extDelim + 1, path.size()));
     auto resp = Response(f->contents.value(), getMimeType(std::string(ext)));
     resp.headers.add("ETag", f->eTag);
+    resp.headers.add("Last-Modified", f->lastModified);
     responder->respond(std::move(resp));
 }
 

@@ -51,6 +51,35 @@ const FileCache::Entry* FileCache::get(const std::string& path)
     return &it->second;
 }
 
+namespace {
+// I do this myself, because I don't want to worry about locales
+std::optional<std::string> formatTm(const std::tm* tm)
+{
+    constexpr std::array weekDays = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+    constexpr std::array months
+        = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    if (tm->tm_wday < 0 || tm->tm_wday > 6) {
+        slog::error("Weekday is out of range: ", tm->tm_wday);
+        return std::nullopt;
+    }
+    if (tm->tm_mon < 0 || tm->tm_mon > 11) {
+        slog::error("Month is out of range: ", tm->tm_mon);
+        return std::nullopt;
+    }
+    // https://www.rfc-editor.org/rfc/rfc7231#section-7.1.1.1
+    // example: Sat, 23 Apr 2022 23:22:48 GMT
+    char buf[32];
+    const auto res = std::snprintf(buf, sizeof(buf), "%s, %02d %s %d %02d:%02d:%02d GMT",
+        weekDays[tm->tm_wday], tm->tm_mday, months[tm->tm_mon], tm->tm_year + 1900, tm->tm_hour,
+        tm->tm_min, tm->tm_sec);
+    if (res < 0) {
+        slog::error("Could not format time");
+        return std::nullopt;
+    }
+    return std::string(buf);
+}
+}
+
 void FileCache::Entry::reload()
 {
     slog::info("reload file: '", path, "'");
@@ -97,6 +126,14 @@ void FileCache::Entry::reload()
         return;
     }
 
-    eTag = eTagBuf;
+    const auto tm = std::gmtime(&st.st_mtime);
+    const auto lm = formatTm(tm);
+    if (!lm) {
+        // Already logged
+        return;
+    }
+
     contents = *cont;
+    eTag = eTagBuf;
+    lastModified = *lm;
 }

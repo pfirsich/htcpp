@@ -15,6 +15,7 @@ public:
         std::string path;
         std::optional<std::string> contents = std::nullopt;
         std::string eTag = "";
+        std::string lastModified = "";
         bool dirty = true;
 
         void reload();
