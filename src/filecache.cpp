@@ -92,7 +92,7 @@ void FileCache::Entry::reload()
     // The ETag can be any number of double quoted characters in {0x21, 0x23-0x7E, 0x80-0xFF}
     char eTagBuf[64] = { 0 }; // at most 32 chars (8 bytes and 8 bytes with 2 chars per byte)
     // long st_size, long int st_mtime
-    if (std::sprintf(eTagBuf, "\"%lx-%lx\"", st.st_mtime, st.st_size) < 0) {
+    if (std::snprintf(eTagBuf, sizeof(eTagBuf), "\"%lx-%lx\"", st.st_mtime, st.st_size) < 0) {
         slog::error("Could not format ETag");
         return;
     }
