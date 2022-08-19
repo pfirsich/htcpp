@@ -345,16 +345,17 @@ std::string Response::string(std::string_view httpVersion) const
     // If I add a reverse-proxy mode, I must not add this.
     s.append("Server: htcpp\r\n");
 
+    bool hasContentLength = false;
     for (const auto& [name, value] : headerEntries) {
         if (ciEqual(name, "Content-Length")) {
-            continue;
+            hasContentLength = true;
         }
         s.append(name);
         s.append(": ");
         s.append(value);
         s.append("\r\n");
     }
-    if (!body.empty()) {
+    if (!hasContentLength && !body.empty()) {
         s.append("Content-Length: ");
         s.append(std::to_string(body.size()));
         s.append("\r\n");

@@ -100,8 +100,12 @@ void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> 
     }
 }
 
-void HostHandler::metrics(const Request&, std::shared_ptr<Responder> responder) const
+void HostHandler::metrics(const Request& request, std::shared_ptr<Responder> responder) const
 {
+    if (request.method != Method::Get) {
+        responder->respond(Response(StatusCode::MethodNotAllowed));
+        return;
+    }
     io_.async<Response>(
         []() {
             return Response(
@@ -133,6 +137,11 @@ void HostHandler::files(const Request& request, std::shared_ptr<Responder> respo
 void HostHandler::respondFile(
     const std::string& path, const Request& request, std::shared_ptr<Responder> responder) const
 {
+    if (request.method != Method::Get && request.method != Method::Head) {
+        responder->respond(Response(StatusCode::MethodNotAllowed));
+        return;
+    }
+
     const auto f = fileCache_.get(path);
     if (!f) {
         responder->respond(Response(StatusCode::NotFound, "Not Found"));
@@ -154,9 +163,16 @@ void HostHandler::respondFile(
 
     const auto extDelim = path.find_last_of('.');
     const auto ext = path.substr(std::min(extDelim + 1, path.size()));
-    auto resp = Response(f->contents.value(), getMimeType(std::string(ext)));
+    auto resp = Response(StatusCode::Ok);
     resp.headers.add("ETag", f->eTag);
     resp.headers.add("Last-Modified", f->lastModified);
+    resp.headers.add("Content-Type", getMimeType(std::string(ext)));
+    if (request.method == Method::Get) {
+        resp.body = f->contents.value();
+    } else {
+        assert(request.method == Method::Head);
+        resp.headers.add("Content-Length", std::to_string(f->contents->size()));
+    }
     responder->respond(std::move(resp));
 }
 
