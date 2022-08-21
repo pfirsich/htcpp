@@ -61,9 +61,13 @@ int main(int argc, char** argv)
             return 1;
         }
     } else if (std::filesystem::is_directory(args.arg.value())) {
-        config.services.emplace_back();
-        config.services.back().hosts.emplace(
-            "*", Config::Service::Host { { { "/", *args.arg } }, args.metrics });
+        auto& service = config.services.emplace_back();
+        Config::Service::Host host;
+        host.files.push_back({ "/", *args.arg });
+        host.metrics = args.metrics;
+        host.headers.push_back(
+            { Pattern::create("*").value(), { { "Cache-Control", "no-store" } } });
+        service.hosts.emplace("*", std::move(host));
     } else {
         slog::error("Invalid argument. Must either be a config file or a directory to serve");
         return 1;

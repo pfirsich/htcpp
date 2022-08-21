@@ -83,3 +83,8 @@ bool startsWith(std::string_view str, std::string_view start)
 {
     return str.substr(0, start.size()) == start;
 }
+
+bool endsWith(std::string_view str, std::string_view end)
+{
+    return str.substr(str.size() - end.size()) == end;
+}

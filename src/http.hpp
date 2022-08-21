@@ -134,6 +134,13 @@ public:
 
     size_t set(std::string_view name, std::string_view value)
     {
+        const auto removed = remove(name);
+        add(name, value);
+        return removed;
+    }
+
+    size_t remove(std::string_view name)
+    {
         size_t removed = 0;
         for (auto it = headers_.begin(); it != headers_.end();) {
             if (ciEqual(it->first, name)) {
@@ -143,7 +150,6 @@ public:
                 ++it;
             }
         }
-        add(name, value);
         return removed;
     }
 
@@ -197,7 +203,7 @@ struct Request {
 };
 
 struct Response {
-    Response() = default;
+    Response();
 
     Response(std::string body);
 
@@ -208,6 +214,8 @@ struct Response {
     Response(StatusCode status, std::string body);
 
     Response(StatusCode status, std::string body, std::string_view contentType);
+
+    void addServerHeader();
 
     std::string string(std::string_view httpVersion) const;
 

@@ -37,6 +37,21 @@ std::string_view toString(std::filesystem::file_type status)
 }
 }
 
+void HostHandler::Host::addHeaders(std::string_view requestPath, Response& response) const
+{
+    for (const auto& rule : headers) {
+        if (rule.pattern.match(requestPath).match) {
+            for (const auto& [name, value] : rule.headers) {
+                if (value.empty()) {
+                    response.headers.remove(name);
+                } else {
+                    response.headers.set(name, value);
+                }
+            }
+        }
+    }
+}
+
 HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
     const std::unordered_map<std::string, Config::Service::Host>& config)
     : io_(io)
@@ -58,6 +73,7 @@ HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
                 FilesEntry { urlPath, fsPath, type == std::filesystem::file_type::directory });
         }
         hosts_.back().metrics = host.metrics;
+        hosts_.back().headers = host.headers;
     }
 }
 
@@ -94,48 +110,52 @@ void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> 
     }
 
     if (host->metrics && request.url.path == *host->metrics) {
-        metrics(request, std::move(responder));
+        metrics(*host, request, std::move(responder));
     } else {
-        files(request, std::move(responder), host->files);
+        files(*host, request, std::move(responder));
     }
 }
 
-void HostHandler::metrics(const Request& request, std::shared_ptr<Responder> responder) const
+void HostHandler::metrics(const HostHandler::Host& host, const Request& request,
+    std::shared_ptr<Responder> responder) const
 {
     if (request.method != Method::Get) {
         responder->respond(Response(StatusCode::MethodNotAllowed));
         return;
     }
+
     io_.async<Response>(
         []() {
             return Response(
                 cpprom::Registry::getDefault().serialize(), "text/plain; version=0.0.4");
         },
-        [responder = std::move(responder)](std::error_code ec, Response&& response) mutable {
+        [&host, requestPath = request.url.path, responder = std::move(responder)](
+            std::error_code ec, Response&& response) mutable {
             assert(!ec);
+            host.addHeaders(requestPath, response);
             responder->respond(std::move(response));
         });
 }
 
-void HostHandler::files(const Request& request, std::shared_ptr<Responder> responder,
-    const std::vector<FilesEntry>& files) const
+void HostHandler::files(const HostHandler::Host& host, const Request& request,
+    std::shared_ptr<Responder> responder) const
 {
-    for (const auto& entry : files) {
+    for (const auto& entry : host.files) {
         if (entry.isDirectory && startsWith(request.url.path, entry.urlPath)) {
-            // url.path must start with a '/' (verified in Url::parse)
+            // request.url.path must start with a '/' (verified in Url::parse)
             const auto path = entry.fsPath + std::string(request.url.path);
-            respondFile(path, request, std::move(responder));
+            respondFile(host, path, request, std::move(responder));
             return;
         } else if (request.url.path == entry.urlPath) {
-            respondFile(entry.fsPath, request, std::move(responder));
+            respondFile(host, entry.fsPath, request, std::move(responder));
             return;
         }
     }
     responder->respond(Response(StatusCode::NotFound, "Not Found"));
 }
 
-void HostHandler::respondFile(
-    const std::string& path, const Request& request, std::shared_ptr<Responder> responder) const
+void HostHandler::respondFile(const HostHandler::Host& host, const std::string& path,
+    const Request& request, std::shared_ptr<Responder> responder) const
 {
     if (request.method != Method::Get && request.method != Method::Head) {
         responder->respond(Response(StatusCode::MethodNotAllowed));
@@ -173,6 +193,7 @@ void HostHandler::respondFile(
         assert(request.method == Method::Head);
         resp.headers.add("Content-Length", std::to_string(f->contents->size()));
     }
+    host.addHeaders(request.url.path, resp);
     responder->respond(std::move(resp));
 }
 

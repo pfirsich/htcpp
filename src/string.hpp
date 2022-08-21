@@ -17,6 +17,7 @@ std::vector<std::string_view> split(std::string_view str, char delim);
 std::string_view httpTrim(std::string_view str);
 
 bool startsWith(std::string_view str, std::string_view start);
+bool endsWith(std::string_view str, std::string_view end);
 
 template <typename T = uint64_t>
 std::optional<T> parseInt(std::string_view str, int base = 10)

@@ -51,6 +51,181 @@ std::optional<std::string> substituteEnvVars(std::string_view source)
     }
     return ret;
 }
+
+std::optional<std::unordered_map<std::string, Config::Service::Host>> loadHosts(
+    const joml::Node& node)
+{
+    if (!node.is<joml::Node::Dictionary>()) {
+        slog::error("'hosts' must be a dictionary");
+        return std::nullopt;
+    }
+
+    std::unordered_map<std::string, Config::Service::Host> hosts;
+    for (const auto& [hostName, jhost] : node.as<joml::Node::Dictionary>()) {
+        auto& host = hosts.emplace(hostName, Config::Service::Host {}).first->second;
+
+        if (!jhost.is<joml::Node::Dictionary>()) {
+            slog::error("host (element of 'hosts') must be a dictionary");
+            return std::nullopt;
+        }
+
+        for (const auto& [hkey, hvalue] : jhost.as<joml::Node::Dictionary>()) {
+            if (hkey == "files") {
+                if (hvalue.is<joml::Node::String>()) {
+                    host.files.emplace_back(
+                        Config::Service::Host::FilesEntry { "/", hvalue.as<joml::Node::String>() });
+                } else if (hvalue.is<joml::Node::Dictionary>()) {
+                    for (const auto& [urlPath, fsPath] : hvalue.as<joml::Node::Dictionary>()) {
+                        if (!fsPath.is<joml::Node::String>()) {
+                            slog::error("'files' values must be a string");
+                            return std::nullopt;
+                        }
+                        host.files.emplace_back(Config::Service::Host::FilesEntry {
+                            urlPath, fsPath.as<joml::Node::String>() });
+                    }
+                } else {
+                    slog::error("'files' must be a string or a dictionary");
+                    return std::nullopt;
+                }
+            } else if (hkey == "metrics") {
+                if (!hvalue.is<joml::Node::String>()) {
+                    slog::error("'metrics' must be a string");
+                    return std::nullopt;
+                }
+                host.metrics = hvalue.as<joml::Node::String>();
+            } else if (hkey == "headers") {
+                if (!hvalue.is<joml::Node::Dictionary>()) {
+                    slog::error("headers (element of host) must be a dictionary");
+                    return std::nullopt;
+                }
+
+                for (const auto& [patternStr, hdsvalue] : hvalue.as<joml::Node::Dictionary>()) {
+                    if (!hdsvalue.is<joml::Node::Dictionary>()) {
+                        slog::error("value of headers dictionary must be a dictionary too");
+                        return std::nullopt;
+                    }
+
+                    auto pattern = Pattern::create(patternStr);
+                    if (!pattern) {
+                        return std::nullopt;
+                    }
+
+                    std::unordered_map<std::string, std::string> headers;
+                    for (const auto& [headerName, headerValue] :
+                        hdsvalue.as<joml::Node::Dictionary>()) {
+                        if (!headerValue.is<joml::Node::String>()) {
+                            slog::error(
+                                "HTTP Header value for '", headerName, "' must be a string");
+                            return std::nullopt;
+                        }
+                        headers.emplace(headerName, headerValue.as<joml::Node::String>());
+                    }
+
+                    host.headers.push_back(Config::Service::Host::HeadersEntry {
+                        std::move(*pattern), std::move(headers) });
+                }
+            } else {
+                slog::error("Invalid key '", hkey, "'");
+                return std::nullopt;
+            }
+        }
+
+        if (host.files.empty() && !host.metrics) {
+            slog::error(
+                "Must specify at least one of 'files' or 'metrics' for host ('", hostName, "')");
+            return std::nullopt;
+        }
+    }
+    return hosts;
+}
+
+std::optional<std::vector<Config::Service>> loadServices(const joml::Node& node)
+{
+    if (!node.is<joml::Node::Dictionary>()) {
+        slog::error("'services' must be a dictionary");
+        return std::nullopt;
+    }
+    std::vector<Config::Service> services;
+    for (const auto& [addr, jservice] : node.as<joml::Node::Dictionary>()) {
+        auto& service = services.emplace_back();
+
+        auto ipPort = IpPort::parse(addr);
+        if (!ipPort) {
+            slog::error("Invalid ip:addr string as service key: '", addr, "'");
+            return std::nullopt;
+        }
+        if (ipPort->ip) {
+            service.listenAddress = *ipPort->ip;
+        }
+        service.listenPort = ipPort->port;
+
+        if (!jservice.is<joml::Node::Dictionary>()) {
+            slog::error("service (element of 'services') must be a dictionary");
+            return std::nullopt;
+        }
+
+        for (const auto& [skey, svalue] : jservice.as<joml::Node::Dictionary>()) {
+            if (skey == "access_log") {
+                if (!svalue.is<joml::Node::Bool>()) {
+                    slog::error("'access_log' must be a boolean");
+                    return std::nullopt;
+                }
+                service.accesLog = svalue.as<joml::Node::Bool>();
+            } else if (skey == "tls") {
+                if (!svalue.is<joml::Node::Dictionary>()) {
+                    slog::error("'tls' must be a dictionary");
+                    return std::nullopt;
+                }
+                service.tls.emplace();
+                bool chainFound = false;
+                bool keyFound = false;
+                for (const auto& [tkey, tvalue] : svalue.as<joml::Node::Dictionary>()) {
+                    if (tkey == "chain") {
+                        if (!tvalue.is<joml::Node::String>()) {
+                            slog::error("'chain' must be a string");
+                            return std::nullopt;
+                        }
+                        service.tls->chain = tvalue.as<joml::Node::String>();
+                        chainFound = true;
+                    } else if (tkey == "key") {
+                        if (!tvalue.is<joml::Node::String>()) {
+                            slog::error("'key' must be a string");
+                            return std::nullopt;
+                        }
+                        service.tls->key = tvalue.as<joml::Node::String>();
+                        keyFound = true;
+                    } else {
+                        slog::error("Invalid key '", tkey, "'");
+                        return std::nullopt;
+                    }
+                }
+                if (!chainFound || !keyFound) {
+                    slog::error("'chain' and 'key' are mandatory in 'tls'");
+                    return std::nullopt;
+                }
+            } else if (skey == "hosts") {
+                const auto hosts = loadHosts(svalue);
+                if (!hosts) {
+                    return std::nullopt;
+                }
+                if (hosts->empty()) {
+                    slog::error("'hosts' must not be empty");
+                    return std::nullopt;
+                }
+                service.hosts = *hosts;
+            } else {
+                slog::error("Invalid key '", skey, "'");
+                return std::nullopt;
+            }
+        }
+
+        if (service.hosts.empty()) {
+            slog::error("'hosts' is mandatory in service '", addr, "' and must not be empty");
+            return std::nullopt;
+        }
+    }
+    return services;
+}
 }
 
 // Without all this generic schema stuff, this would be even larger and more complicated and more
@@ -100,138 +275,12 @@ bool Config::loadFromFile(const std::string& path)
             }
             copy.ioSubmissionQueuePolling = value.as<joml::Node::Bool>();
         } else if (key == "services") {
-            if (!value.is<joml::Node::Dictionary>()) {
-                slog::error("'services' must be a dictionary");
+            const auto services = loadServices(value);
+            if (!services) {
                 return false;
             }
-            for (const auto& [addr, jservice] : value.as<joml::Node::Dictionary>()) {
-                auto& service = copy.services.emplace_back();
-
-                auto ipPort = IpPort::parse(addr);
-                if (!ipPort) {
-                    slog::error("Invalid ip:addr string as service key: '", addr, "'");
-                    return false;
-                }
-                if (ipPort->ip) {
-                    service.listenAddress = *ipPort->ip;
-                }
-                service.listenPort = ipPort->port;
-
-                if (!jservice.is<joml::Node::Dictionary>()) {
-                    slog::error("service (element of 'services') must be a dictionary");
-                    return false;
-                }
-
-                bool hostsFound = false;
-
-                for (const auto& [skey, svalue] : jservice.as<joml::Node::Dictionary>()) {
-                    if (skey == "access_log") {
-                        if (!svalue.is<joml::Node::Bool>()) {
-                            slog::error("'access_log' must be a boolean");
-                            return false;
-                        }
-                        service.accesLog = svalue.as<joml::Node::Bool>();
-                    } else if (skey == "tls") {
-                        if (!svalue.is<joml::Node::Dictionary>()) {
-                            slog::error("'tls' must be a dictionary");
-                            return false;
-                        }
-                        service.tls.emplace();
-                        bool chainFound = false;
-                        bool keyFound = false;
-                        for (const auto& [tkey, tvalue] : svalue.as<joml::Node::Dictionary>()) {
-                            if (tkey == "chain") {
-                                if (!tvalue.is<joml::Node::String>()) {
-                                    slog::error("'chain' must be a string");
-                                    return false;
-                                }
-                                service.tls->chain = tvalue.as<joml::Node::String>();
-                                chainFound = true;
-                            } else if (tkey == "key") {
-                                if (!tvalue.is<joml::Node::String>()) {
-                                    slog::error("'key' must be a string");
-                                    return false;
-                                }
-                                service.tls->key = tvalue.as<joml::Node::String>();
-                                keyFound = true;
-                            } else {
-                                slog::error("Invalid key '", tkey, "'");
-                                return false;
-                            }
-                        }
-                        if (!chainFound || !keyFound) {
-                            slog::error("'chain' and 'key' are mandatory in 'tls'");
-                            return false;
-                        }
-                    } else if (skey == "hosts") {
-                        if (!svalue.is<joml::Node::Dictionary>()) {
-                            slog::error("'hosts' must be a dictionary");
-                            return false;
-                        }
-                        for (const auto& [hostName, jhost] : svalue.as<joml::Node::Dictionary>()) {
-                            auto& host
-                                = service.hosts.emplace(hostName, Service::Host {}).first->second;
-
-                            if (!jhost.is<joml::Node::Dictionary>()) {
-                                slog::error("host (element of 'hosts') must be a dictionary");
-                                return false;
-                            }
-
-                            for (const auto& [hkey, hvalue] : jhost.as<joml::Node::Dictionary>()) {
-                                if (hkey == "files") {
-                                    if (hvalue.is<joml::Node::String>()) {
-                                        host.files.emplace_back(Service::Host::FilesEntry {
-                                            "/", hvalue.as<joml::Node::String>() });
-                                    } else if (hvalue.is<joml::Node::Dictionary>()) {
-                                        for (const auto& [urlPath, fsPath] :
-                                            hvalue.as<joml::Node::Dictionary>()) {
-                                            if (!fsPath.is<joml::Node::String>()) {
-                                                slog::error("'files' values must be a string");
-                                                return false;
-                                            }
-                                            host.files.emplace_back(Service::Host::FilesEntry {
-                                                urlPath, fsPath.as<joml::Node::String>() });
-                                        }
-                                    } else {
-                                        slog::error("'files' must be a string or a dictionary");
-                                        return false;
-                                    }
-                                } else if (hkey == "metrics") {
-                                    if (!hvalue.is<joml::Node::String>()) {
-                                        slog::error("'metrics' must be a string");
-                                        return false;
-                                    }
-                                    host.metrics = hvalue.as<joml::Node::String>();
-                                } else {
-                                    slog::error("Invalid key '", hkey, "'");
-                                    return false;
-                                }
-                            }
-
-                            if (host.files.empty() && !host.metrics) {
-                                slog::error(
-                                    "Must specify at least one of 'files' or 'metrics' for host ('",
-                                    hostName, "')");
-                                return false;
-                            }
-
-                            hostsFound = true;
-                        }
-                    } else {
-                        slog::error("Invalid key '", skey, "'");
-                        return false;
-                    }
-                }
-
-                if (!hostsFound) {
-                    slog::error(
-                        "'hosts' is mandatory in service '", addr, "' and must not be empty");
-                    return false;
-                }
-
-                servicesFound = true;
-            }
-
+            copy.services = *services;
+            servicesFound = true;
         } else {
             slog::error("Invalid key '", key, '"');
             return false;

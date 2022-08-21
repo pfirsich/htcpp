@@ -292,14 +292,21 @@ std::optional<Request> Request::parse(std::string_view requestStr)
     return req;
 }
 
+Response::Response()
+{
+    addServerHeader();
+}
+
 Response::Response(std::string body)
     : body(std::move(body))
 {
+    addServerHeader();
 }
 
 Response::Response(std::string body, std::string_view contentType)
     : body(std::move(body))
 {
+    addServerHeader();
     headers.add("Content-Type", contentType);
 }
 
@@ -307,18 +314,31 @@ Response::Response(StatusCode status, std::string body)
     : status(status)
     , body(std::move(body))
 {
+    addServerHeader();
 }
 
 Response::Response(StatusCode status)
     : status(status)
 {
+    addServerHeader();
 }
 
 Response::Response(StatusCode status, std::string body, std::string_view contentType)
     : status(status)
     , body(std::move(body))
 {
+    addServerHeader();
     headers.add("Content-Type", contentType);
+}
+
+void Response::addServerHeader()
+{
+    // I think it's useful to provide this header so clients can work around issues,
+    // but I avoid the version, because this might expose too much information (like your server
+    // being outdated or your patch cycle). E.g. if the server version bumps only on thursdays, that
+    // could be valuable information.
+    // If I add a reverse-proxy mode, I must not add this.
+    headers.add("Server", "htcpp");
 }
 
 std::string Response::string(std::string_view httpVersion) const
@@ -337,13 +357,6 @@ std::string Response::string(std::string_view httpVersion) const
     s.append(std::to_string(static_cast<int>(status)));
     // The reason phrase may be empty, but the separator space is not optional
     s.append(" \r\n");
-
-    // I think it's useful to provide this header so clients can work around issues,
-    // but I avoid the version, because this might expose too much information (like your server
-    // being outdated or your patch cycle). E.g. if the server version bumps only on thursdays, that
-    // could be valuable information.
-    // If I add a reverse-proxy mode, I must not add this.
-    s.append("Server: htcpp\r\n");
 
     bool hasContentLength = false;
     for (const auto& [name, value] : headerEntries) {

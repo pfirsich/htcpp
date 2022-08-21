@@ -7,6 +7,8 @@
 
 #include <netinet/in.h>
 
+#include "pattern.hpp"
+
 struct Config {
     struct Server {
         uint32_t listenAddress = INADDR_ANY;
@@ -30,8 +32,14 @@ struct Config {
                 std::string fsPath;
             };
 
+            struct HeadersEntry {
+                Pattern pattern;
+                std::unordered_map<std::string, std::string> headers;
+            };
+
             std::vector<FilesEntry> files;
             std::optional<std::string> metrics;
+            std::vector<HeadersEntry> headers = {};
         };
 
 #ifdef TLS_SUPPORT_ENABLED

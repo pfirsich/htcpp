@@ -18,6 +18,7 @@ lib_src = [
   'src/ioqueue.cpp',
   'src/log.cpp',
   'src/metrics.cpp',
+  'src/pattern.cpp',
   'src/router.cpp',
   'src/server.cpp',
   'src/string.cpp',

@@ -1,0 +1,25 @@
+services: {
+    "0.0.0.0:6969": {
+        hosts: {
+            "*": {
+                files: "."
+
+                headers: {
+                    "*": {
+                        # An empty header is the same as a non-existant header, so an empty string will remove it.
+                        # By default, the "Server" header is included (it's value is "htcpp")
+                        "Server": ""
+                    }
+                    # There is a fast path for checking a suffix, which only works with "*{.html,.txt}" and not
+                    # with "*.{html,txt}", which is why it is used here.
+                    "*{.html,.txt}": {
+                        "Cache-Control": "no-store"
+                    }
+                    "*{.jpg}": {
+                        "Cache-Control": "public, max-age=1"
+                    }
+                }
+            }
+        }
+    }
+}

@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "filecache.hpp"
 #include "http.hpp"
+#include "pattern.hpp"
 #include "server.hpp"
 
 class HostHandler {
@@ -25,16 +26,19 @@ private:
         std::string name;
         std::vector<FilesEntry> files;
         std::optional<std::string> metrics;
+        std::vector<Config::Service::Host::HeadersEntry> headers;
+
+        void addHeaders(std::string_view requestPath, Response& response) const;
     };
 
     static std::string getMimeType(const std::string& fileExt);
 
-    void metrics(const Request&, std::shared_ptr<Responder> responder) const;
+    void metrics(const Host& host, const Request&, std::shared_ptr<Responder> responder) const;
 
-    void files(const Request& request, std::shared_ptr<Responder> responder,
-        const std::vector<FilesEntry>& root) const;
+    void files(
+        const Host& host, const Request& request, std::shared_ptr<Responder> responder) const;
 
-    void respondFile(const std::string& path, const Request& request,
+    void respondFile(const Host& host, const std::string& path, const Request& request,
         std::shared_ptr<Responder> responder) const;
 
     IoQueue& io_;
