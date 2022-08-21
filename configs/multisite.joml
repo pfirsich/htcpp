@@ -2,10 +2,10 @@ services: {
     "0.0.0.0:6969": {
         hosts: {
             "src.localhost": {
-                root: "src/"
+                files: "src/"
             }
             "scripts.localhost": {
-                root: "scripts/"
+                files: "scripts/"
             }
         }
     }
