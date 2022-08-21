@@ -14,8 +14,20 @@ public:
     };
 
     static std::optional<Pattern> create(std::string_view str);
+    static bool hasGroupReferences(std::string_view str);
+    static std::string replaceGroupReferences(
+        std::string_view str, const std::vector<std::string_view>& groups);
 
     MatchResult match(std::string_view str) const;
+
+    size_t numCaptureGroups() const;
+
+    bool isValidReplacementString(std::string_view str) const;
+
+    const std::string& raw() const;
+
+    bool isLiteral() const;
+    bool isWildcard() const;
 
 private:
     enum class Type {
@@ -44,9 +56,7 @@ private:
 
     Pattern() = default;
 
-    bool isLiteral() const;
     bool isAnyOf() const;
-    bool isWildcard() const;
     bool isLiteralPrefix() const;
     bool isAnyOfPrefix() const;
     bool isLiteralSuffix() const;
@@ -55,5 +65,6 @@ private:
     MatchResult genericMatch(std::string_view str) const;
 
     Type type_ = Type::Generic;
+    std::string raw_;
     std::vector<Part> parts_;
 };

@@ -17,9 +17,9 @@ public:
 
 private:
     struct FilesEntry {
-        std::string urlPath;
+        Pattern urlPattern;
         std::string fsPath;
-        bool isDirectory = false;
+        bool needsGroupReplacement;
     };
 
     struct Host {

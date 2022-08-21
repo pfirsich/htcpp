@@ -8,6 +8,7 @@
 std::optional<Pattern> Pattern::create(std::string_view str)
 {
     Pattern ret;
+    ret.raw_ = std::string(str);
 
     size_t i = 0;
     while (i < str.size()) {
@@ -49,6 +50,42 @@ std::optional<Pattern> Pattern::create(std::string_view str)
         ret.type_ = Type::Generic;
     }
 
+    return ret;
+}
+
+bool Pattern::hasGroupReferences(std::string_view str)
+{
+    return str.find('$') != std::string_view::npos;
+}
+
+std::string Pattern::replaceGroupReferences(
+    std::string_view str, const std::vector<std::string_view>& groups)
+{
+    assert(groups.size() < 10);
+    std::string ret;
+    ret.reserve(256);
+    size_t cursor = 0;
+    while (cursor < str.size()) {
+        const auto marker = str.find('$', cursor);
+        if (marker == std::string_view::npos) {
+            ret.append(str.substr(cursor));
+            break;
+        } else {
+            ret.append(str.substr(cursor, marker - cursor));
+        }
+
+        if (marker + 1 < str.size() && str[marker + 1] != '0' && isDigit(str[marker + 1])) {
+            assert(str[marker + 1] >= '1');
+            const auto idx = static_cast<size_t>(str[marker + 1] - '1');
+            if (idx < groups.size()) {
+                ret.append(groups[idx]);
+            }
+            cursor = marker + 2;
+        } else {
+            ret.push_back('$');
+            cursor = marker + 1;
+        }
+    }
     return ret;
 }
 
@@ -110,6 +147,52 @@ Pattern::MatchResult Pattern::match(std::string_view str) const
         assert(false && "Invalid Pattern Type");
         break;
     }
+}
+
+size_t Pattern::numCaptureGroups() const
+{
+    size_t n = 0;
+    for (const auto& part : parts_) {
+        if (std::holds_alternative<Wildcard>(part)) {
+            n++;
+        }
+    }
+    return n;
+}
+
+bool Pattern::isValidReplacementString(std::string_view str) const
+{
+    const auto numGroups = numCaptureGroups();
+    size_t cursor = 0;
+    while (cursor < str.size()) {
+        const auto marker = str.find('$', cursor);
+        if (marker == std::string_view::npos) {
+            break;
+        }
+
+        if (marker + 1 < str.size() && isDigit(str[marker + 1])) {
+            if (str[marker + 1] == '0') {
+                slog::info("'$0' is invalid. The first group is adressed by '$1'");
+                return false;
+            }
+            assert(str[marker + 1] >= '1');
+            const auto idx = static_cast<size_t>(str[marker + 1] - '1');
+            if (idx >= numGroups) {
+                slog::error("'", str.substr(marker, 2), "' is out of bounds. Pattern only has ",
+                    numGroups, " groups");
+                return false;
+            }
+            cursor = marker + 2;
+        } else {
+            cursor = marker + 1;
+        }
+    }
+    return true;
+}
+
+const std::string& Pattern::raw() const
+{
+    return raw_;
 }
 
 bool Pattern::isLiteral() const

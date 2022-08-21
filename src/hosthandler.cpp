@@ -60,17 +60,39 @@ HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
     for (const auto& [name, host] : config) {
         hosts_.emplace_back();
         hosts_.back().name = name;
-        for (const auto& [urlPath, fsPath] : host.files) {
-            const auto canonical = std::filesystem::canonical(fsPath); // Follow symlinks
-            const auto type = std::filesystem::status(canonical).type();
-            const auto severity = type == std::filesystem::file_type::regular
-                    || type == std::filesystem::file_type::directory
-                ? slog::Severity::Debug
-                : slog::Severity::Warning;
-            slog::log(
-                severity, name, ": '", urlPath, "' -> '", canonical, "' (", toString(type), ")");
-            hosts_.back().files.push_back(
-                FilesEntry { urlPath, fsPath, type == std::filesystem::file_type::directory });
+        for (const auto& [urlPattern, fsPath] : host.files) {
+            std::error_code ec;
+            if (urlPattern.isLiteral()) {
+                const auto canonical = std::filesystem::canonical(fsPath, ec); // Follow symlinks
+                if (ec) {
+                    slog::error("Could not canonicalize '", fsPath, "': ", ec.message());
+                    std::exit(1);
+                }
+
+                const auto status = std::filesystem::status(canonical, ec);
+                if (ec) {
+                    slog::error("Could not stat '", canonical.u8string(), "': ", ec.message());
+                    std::exit(1);
+                }
+
+                if (std::filesystem::is_directory(status)) {
+                    auto pattern = Pattern::create(pathJoin(urlPattern.raw(), "*")).value();
+                    auto path = pathJoin(fsPath, "$1");
+                    hosts_.back().files.push_back(FilesEntry { pattern, path, true });
+                    slog::debug(name, ": '", pattern.raw(), "' -> '", path, "' (directory)");
+                } else {
+                    hosts_.back().files.push_back(FilesEntry { urlPattern, fsPath, false });
+                    const auto severity = status.type() == std::filesystem::file_type::regular
+                        ? slog::Severity::Debug
+                        : slog::Severity::Warning;
+                    slog::log(severity, name, ": '", urlPattern.raw(), "' -> '", canonical, "' (",
+                        toString(status.type()), ")");
+                }
+            } else {
+                hosts_.back().files.push_back(
+                    FilesEntry { urlPattern, fsPath, Pattern::hasGroupReferences(fsPath) });
+                slog::debug(name, ": '", urlPattern.raw(), "' -> '", fsPath, "'");
+            }
         }
         hosts_.back().metrics = host.metrics;
         hosts_.back().headers = host.headers;
@@ -141,13 +163,14 @@ void HostHandler::files(const HostHandler::Host& host, const Request& request,
     std::shared_ptr<Responder> responder) const
 {
     for (const auto& entry : host.files) {
-        if (entry.isDirectory && startsWith(request.url.path, entry.urlPath)) {
-            // request.url.path must start with a '/' (verified in Url::parse)
-            const auto path = entry.fsPath + std::string(request.url.path);
-            respondFile(host, path, request, std::move(responder));
-            return;
-        } else if (request.url.path == entry.urlPath) {
-            respondFile(host, entry.fsPath, request, std::move(responder));
+        const auto res = entry.urlPattern.match(request.url.path);
+        if (res.match) {
+            if (entry.needsGroupReplacement) {
+                const auto path = Pattern::replaceGroupReferences(entry.fsPath, res.groups);
+                respondFile(host, path, request, std::move(responder));
+            } else {
+                respondFile(host, entry.fsPath, request, std::move(responder));
+            }
             return;
         }
     }

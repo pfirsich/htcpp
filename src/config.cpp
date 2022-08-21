@@ -72,16 +72,28 @@ std::optional<std::unordered_map<std::string, Config::Service::Host>> loadHosts(
         for (const auto& [hkey, hvalue] : jhost.as<joml::Node::Dictionary>()) {
             if (hkey == "files") {
                 if (hvalue.is<joml::Node::String>()) {
-                    host.files.emplace_back(
-                        Config::Service::Host::FilesEntry { "/", hvalue.as<joml::Node::String>() });
+                    host.files.emplace_back(Config::Service::Host::FilesEntry {
+                        Pattern::create("/").value(), hvalue.as<joml::Node::String>() });
                 } else if (hvalue.is<joml::Node::Dictionary>()) {
                     for (const auto& [urlPath, fsPath] : hvalue.as<joml::Node::Dictionary>()) {
+                        auto pattern = Pattern::create(urlPath);
+                        if (!pattern) {
+                            return std::nullopt;
+                        }
+
                         if (!fsPath.is<joml::Node::String>()) {
                             slog::error("'files' values must be a string");
                             return std::nullopt;
                         }
-                        host.files.emplace_back(Config::Service::Host::FilesEntry {
-                            urlPath, fsPath.as<joml::Node::String>() });
+
+                        const auto path = fsPath.as<joml::Node::String>();
+                        if (!pattern->isValidReplacementString(path)) {
+                            slog::error("'", path, "' is an invalid replacement string");
+                            return std::nullopt;
+                        }
+
+                        host.files.emplace_back(
+                            Config::Service::Host::FilesEntry { *pattern, path });
                     }
                 } else {
                     slog::error("'files' must be a string or a dictionary");

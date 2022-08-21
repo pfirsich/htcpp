@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -11,6 +12,7 @@ char toLower(char c);
 bool ciEqual(std::string_view a, std::string_view b);
 
 bool isHttpWhitespace(char c);
+bool isDigit(char c);
 
 std::vector<std::string_view> split(std::string_view str, char delim);
 
@@ -32,3 +34,5 @@ std::optional<T> parseInt(std::string_view str, int base = 10)
         return std::nullopt;
     }
 }
+
+std::string pathJoin(std::string_view a, std::string_view b);

@@ -1,0 +1,17 @@
+services: {
+    "0.0.0.0:6969": {
+        hosts: {
+            "*": {
+                files: {
+                    # These are matched top to bottom
+                    "/": "testfiles/index.html"
+                    "/txt/*": "testfiles/$1.txt"
+                    "/cat": "testfiles/cat.jpg"
+                    # The rule below is equivalent to: "/*": "testfiles/$1" and will be internally translated
+                    # as such. You can see this by passing --debug.
+                    "/": "testfiles/"
+                }
+            }
+        }
+    }
+}

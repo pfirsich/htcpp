@@ -63,7 +63,7 @@ int main(int argc, char** argv)
     } else if (std::filesystem::is_directory(args.arg.value())) {
         auto& service = config.services.emplace_back();
         Config::Service::Host host;
-        host.files.push_back({ "/", *args.arg });
+        host.files.push_back({ Pattern::create("/*").value(), pathJoin(*args.arg, "$1") });
         host.metrics = args.metrics;
         host.headers.push_back(
             { Pattern::create("*").value(), { { "Cache-Control", "no-store" } } });

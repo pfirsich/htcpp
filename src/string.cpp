@@ -40,6 +40,11 @@ bool isHttpWhitespace(char c)
     return c == ' ' || c == '\t';
 }
 
+bool isDigit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
 std::vector<std::string_view> split(std::string_view str, char delim)
 {
     std::vector<std::string_view> parts;
@@ -87,4 +92,15 @@ bool startsWith(std::string_view str, std::string_view start)
 bool endsWith(std::string_view str, std::string_view end)
 {
     return str.substr(str.size() - end.size()) == end;
+}
+
+std::string pathJoin(std::string_view a, std::string_view b)
+{
+    assert(!a.empty());
+    std::string ret(a);
+    if (a.back() != '/') {
+        ret.push_back('/');
+    }
+    ret.append(b);
+    return ret;
 }

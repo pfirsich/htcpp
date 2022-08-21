@@ -28,7 +28,7 @@ struct Config {
     struct Service : public Server {
         struct Host {
             struct FilesEntry {
-                std::string urlPath;
+                Pattern urlPattern;
                 std::string fsPath;
             };
 
