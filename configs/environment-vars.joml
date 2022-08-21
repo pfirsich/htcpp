@@ -1,0 +1,17 @@
+services: {
+    "0.0.0.0:${PORT:6969}": {
+        hosts: {
+            "*": {
+                files: "."
+
+                headers: {
+                    "*": {
+                        # If no default value is specified, htcpp will log an error
+                        # and exit if no corresponding environment value is set
+                        "Cache-Control": "${CACHE_CONTROL}"
+                    }
+                }
+            }
+        }
+    }
+}
