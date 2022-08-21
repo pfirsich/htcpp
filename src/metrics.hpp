@@ -1,6 +1,6 @@
 #include <cpprom/cpprom.hpp>
 
-/* https://prometheus.io/docs/practices/instrumentation/#inner-loops
+/* https://prometheus.io/docs/practices/instrumentation/
  * Summary:
  * - Key metrics are performaned queries, errors, latency, number of req in progress
  * - Be consistent in whether you count queries when they start or when they end
