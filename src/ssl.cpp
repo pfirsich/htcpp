@@ -260,17 +260,6 @@ SslConnection::~SslConnection()
     BIO_free(externalBio_);
 }
 
-SslConnection::SslConnection(SslConnection&& other)
-    : TcpConnection(other.io_, other.fd_)
-    , ssl_(other.ssl_)
-    , externalBio_(other.externalBio_)
-    , recvBuffer_(std::move(other.recvBuffer_))
-    , sendBuffer_(std::move(other.sendBuffer_))
-{
-    other.ssl_ = nullptr;
-    other.externalBio_ = nullptr;
-}
-
 void SslConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
     startSslOperation(SslOperation::Read, buffer, len, std::move(handler));

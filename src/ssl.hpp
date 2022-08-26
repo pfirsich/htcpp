@@ -81,11 +81,10 @@ std::string toString(SslOperation op);
 class SslConnection : public TcpConnection {
 public:
     SslConnection(IoQueue& io, int fd, std::shared_ptr<SslContext> context);
-    // Note: This class is not actually movable (because it's `this` pointer is captured in
-    // lambdas), but it can be moved before any operation is done on it and we need that.
-    SslConnection(SslConnection&&);
     ~SslConnection();
 
+    // Not movable or copyable, because pointers to it are captured in lambdas
+    SslConnection(SslConnection&&) = delete;
     SslConnection(const SslConnection&) = delete;
     SslConnection& operator=(const SslConnection&) = delete;
     SslConnection& operator=(SslConnection&&) = delete;
@@ -137,8 +136,8 @@ struct SslConnectionFactory {
 
     SslConnectionFactory(IoQueue& io, std::string certChainPath, std::string keyPath);
 
-    Connection create(IoQueue& io, int fd)
+    std::unique_ptr<Connection> create(IoQueue& io, int fd)
     {
-        return Connection(io, fd, contextManager->getCurrentContext());
+        return std::make_unique<Connection>(io, fd, contextManager->getCurrentContext());
     }
 };

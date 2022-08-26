@@ -83,8 +83,8 @@ private:
     // destroyed
     class Session : public std::enable_shared_from_this<Session> {
     public:
-        Session(Connection&& connection, RequestHandler& handler, std::string remoteAddr,
-            const Config::Server& serverConfig)
+        Session(std::unique_ptr<Connection> connection, RequestHandler& handler,
+            std::string remoteAddr, const Config::Server& serverConfig)
             : connection_(std::move(connection))
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
@@ -133,7 +133,7 @@ private:
 
             const auto recvLen = serverConfig_.maxRequestHeaderSize;
             requestHeaderBuffer_.append(recvLen, '\0');
-            connection_.recv(requestHeaderBuffer_.data(), recvLen,
+            connection_->recv(requestHeaderBuffer_.data(), recvLen,
                 // `this->` before `shared_from_this` is necessary or you get an error
                 // because of a dependent type lookup.
                 [this, self = this->shared_from_this(), recvLen](
@@ -145,12 +145,12 @@ private:
                         // want to close. There might be errors, where shutdown is better, but
                         // especially with SSL almost all errors here require us to NOT shutdown.
                         // Same applies for send below.
-                        connection_.close();
+                        connection_->close();
                         return;
                     }
 
                     if (readBytes == 0) {
-                        connection_.close();
+                        connection_->close();
                         return;
                     }
 
@@ -201,18 +201,18 @@ private:
             const auto recvLen = contentLength - sizeBeforeRead;
             requestBodyBuffer_.append(recvLen, '\0');
             auto buffer = requestBodyBuffer_.data() + sizeBeforeRead;
-            connection_.recv(buffer, recvLen,
+            connection_->recv(buffer, recvLen,
                 [this, self = this->shared_from_this(), recvLen, contentLength](
                     std::error_code ec, int readBytes) {
                     if (ec) {
                         Metrics::get().recvErrors.labels(ec.message()).inc();
                         slog::error("Error in recv (body): ", ec.message());
-                        connection_.close();
+                        connection_->close();
                         return;
                     }
 
                     if (readBytes == 0) {
-                        connection_.close();
+                        connection_->close();
                         return;
                     }
 
@@ -285,7 +285,7 @@ private:
         void sendResponse()
         {
             assert(responseSendOffset_ < responseBuffer_.size());
-            connection_.send(responseBuffer_.data() + responseSendOffset_,
+            connection_->send(responseBuffer_.data() + responseSendOffset_,
                 responseBuffer_.size() - responseSendOffset_,
                 [this, self = this->shared_from_this()](std::error_code ec, int sentBytes) {
                     if (ec) {
@@ -294,7 +294,7 @@ private:
                         // because with SSL it might do ::recv as part of Connection::send.
                         Metrics::get().sendErrors.labels(ec.message()).inc();
                         slog::error("Error in send: ", ec.message());
-                        connection_.close();
+                        connection_->close();
                         return;
                     }
 
@@ -303,7 +303,7 @@ private:
                         // For SSL this will happen, when the remote peer closed the
                         // connection during a recv that's part of an SSL_write.
                         // In that case we close (since we can't shutdown).
-                        connection_.close();
+                        connection_->close();
                         return;
                     }
 
@@ -337,13 +337,13 @@ private:
         // The difference is most important for TLS, where shutdown will call SSL_shutdown.
         void shutdown()
         {
-            connection_.shutdown([this, self = this->shared_from_this()](std::error_code) {
+            connection_->shutdown([this, self = this->shared_from_this()](std::error_code) {
                 // There is no way to recover, so ignore the error and close either way.
-                connection_.close();
+                connection_->close();
             });
         }
 
-        Connection connection_;
+        std::unique_ptr<Connection> connection_;
         RequestHandler& handler_;
         std::string remoteAddr_;
         // The Request object is the result of request header parsing and consists of many

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <ioqueue.hpp>
 
 class TcpConnection {
@@ -21,8 +23,8 @@ protected:
 struct TcpConnectionFactory {
     using Connection = TcpConnection;
 
-    Connection create(IoQueue& io, int fd)
+    std::unique_ptr<Connection> create(IoQueue& io, int fd)
     {
-        return Connection(io, fd);
+        return std::make_unique<Connection>(io, fd);
     }
 };
