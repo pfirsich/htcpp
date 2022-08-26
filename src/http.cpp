@@ -418,8 +418,8 @@ std::optional<Request> Request::parse(std::string_view requestStr)
 }
 
 Response::Response()
+    : status(StatusCode::Invalid)
 {
-    addServerHeader();
 }
 
 Response::Response(std::string body)

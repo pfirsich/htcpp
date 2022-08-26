@@ -23,7 +23,9 @@ enum class Method {
 std::optional<Method> parseMethod(std::string_view method);
 std::string toString(Method method);
 
-enum class StatusCode {
+enum class StatusCode : uint32_t {
+    Invalid = 0,
+
     // 1xx = Informational Response
     Continue = 100,
     SwitchingProtocols = 101,
