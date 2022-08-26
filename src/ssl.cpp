@@ -59,14 +59,26 @@ std::string sslErrorToString(int sslError)
     }
 }
 
-std::optional<SslContext> SslContext::load(
+std::optional<SslContext> SslContext::createServer(
     const std::string& certChainPath, const std::string& keyPath)
 {
-    auto ctx = SslContext();
+    auto ctx = SslContext(SslContext::Mode::Server);
     if (!static_cast<SSL_CTX*>(ctx)) {
         return std::nullopt;
     }
-    if (!ctx.init(certChainPath, keyPath)) {
+    if (!ctx.initServer(certChainPath, keyPath)) {
+        return std::nullopt;
+    }
+    return ctx;
+}
+
+std::optional<SslContext> SslContext::createClient()
+{
+    auto ctx = SslContext(SslContext::Mode::Client);
+    if (!static_cast<SSL_CTX*>(ctx)) {
+        return std::nullopt;
+    }
+    if (!ctx.initClient()) {
         return std::nullopt;
     }
     return ctx;
@@ -74,8 +86,8 @@ std::optional<SslContext> SslContext::load(
 
 // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_new.html
 // TLS_method is the only one that should be used anymore
-SslContext::SslContext()
-    : ctx_(SSL_CTX_new(TLS_server_method()))
+SslContext::SslContext(SslContext::Mode mode)
+    : ctx_(SSL_CTX_new(mode == Mode::Client ? TLS_client_method() : TLS_server_method()))
 {
     if (!ctx_) {
         slog::error("Could not create SSL context: ", getSslErrorString());
@@ -104,7 +116,7 @@ SslContext& SslContext::operator=(SslContext&& other)
     return *this;
 }
 
-bool SslContext::init(const std::string& certChainPath, const std::string& keyPath)
+bool SslContext::initServer(const std::string& certChainPath, const std::string& keyPath)
 {
     slog::info("Loading certificates from '", certChainPath, "'");
     assert(ctx_);
@@ -125,27 +137,38 @@ bool SslContext::init(const std::string& certChainPath, const std::string& keyPa
     return true;
 }
 
+bool SslContext::initClient()
+{
+    assert(ctx_);
+    if (SSL_CTX_set_default_verify_paths(ctx_) != 1) {
+        slog::error("Could not set default verify paths: ", getSslErrorString());
+        return false;
+    }
+    return true;
+}
+
 SslContext::operator SSL_CTX*()
 {
     return ctx_;
 }
 
-SslContextManager::SslContextManager(IoQueue& io, std::string certChainPath, std::string keyPath)
+SslServerContextManager::SslServerContextManager(
+    IoQueue& io, std::string certChainPath, std::string keyPath)
     : certChainPath_(std::move(certChainPath))
     , keyPath_(std::move(keyPath))
     , io_(io)
     , fileWatcher_(io)
 {
     updateContext();
-    // TODO: Cancel on destruction and take ownership of SslContextManager
-    // for now we assume a SslContextManager lives forever
+    // TODO: Cancel on destruction and take ownership of SslServerContextManager
+    // for now we assume a SslServerContextManager lives forever
     fileWatcher_.watch(
         certChainPath_, [this](std::error_code ec, std::string_view) { fileWatcherCallback(ec); });
     fileWatcher_.watch(
         keyPath_, [this](std::error_code ec, std::string_view) { fileWatcherCallback(ec); });
 }
 
-void SslContextManager::fileWatcherCallback(std::error_code ec)
+void SslServerContextManager::fileWatcherCallback(std::error_code ec)
 {
     if (ec) {
         slog::fatal("Error watching certificates: ", ec.message());
@@ -155,7 +178,7 @@ void SslContextManager::fileWatcherCallback(std::error_code ec)
     // certificate chain file and the private key changed shortly after another.
     io_.async<std::optional<SslContext>>(
         [this]() -> std::optional<SslContext> {
-            return SslContext::load(certChainPath_, keyPath_);
+            return SslContext::createServer(certChainPath_, keyPath_);
         },
         [this](std::error_code ec, std::optional<SslContext>&& context) -> void {
             if (ec) {
@@ -167,14 +190,14 @@ void SslContextManager::fileWatcherCallback(std::error_code ec)
         });
 }
 
-std::shared_ptr<SslContext> SslContextManager::getCurrentContext() const
+std::shared_ptr<SslContext> SslServerContextManager::getCurrentContext() const
 {
     return currentContext_;
 }
 
-void SslContextManager::updateContext()
+void SslServerContextManager::updateContext()
 {
-    auto ctx = SslContext::load(certChainPath_, keyPath_);
+    auto ctx = SslContext::createServer(certChainPath_, keyPath_);
     if (!ctx) {
         return;
     }
@@ -450,11 +473,4 @@ void SslConnection::processSslOperationResult(const SslOperationResult& result)
             toString(state_.currentOp), ": ", getSslErrorString());
         completeSslOperation(ec, -1);
     }
-}
-
-SslConnectionFactory::SslConnectionFactory(
-    IoQueue& io, std::string certChainPath, std::string keyPath)
-    : contextManager(
-        std::make_unique<SslContextManager>(io, std::move(certChainPath), std::move(keyPath)))
-{
 }

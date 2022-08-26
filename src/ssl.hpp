@@ -24,10 +24,13 @@ std::string sslErrorToString(int sslError);
 
 class SslContext {
 public:
-    static std::optional<SslContext> load(
+    static std::optional<SslContext> createServer(
         const std::string& certChainPath, const std::string& keyPath);
+    static std::optional<SslContext> createClient();
 
-    SslContext();
+    enum class Mode { Invalid = 0, Client, Server };
+
+    SslContext(Mode mode);
     ~SslContext();
     SslContext(SslContext&) = delete;
     SslContext& operator=(SslContext&) = delete;
@@ -36,7 +39,8 @@ public:
 
     // The cert chain file and key file must be PEM files without a password.
     // This is enough because I can test with it and it is also what certbot spits out.
-    bool init(const std::string& certChainPath, const std::string& keyPath);
+    bool initServer(const std::string& certChainPath, const std::string& keyPath);
+    bool initClient();
 
     operator SSL_CTX*();
 
@@ -44,11 +48,9 @@ private:
     SSL_CTX* ctx_;
 };
 
-// This being a Singleton is kind of lame, but it's good enough.
-// Later this thing should recreate contexts, when the certificates get renewed
-class SslContextManager {
+class SslServerContextManager {
 public:
-    SslContextManager(IoQueue& io, std::string certChainPath, std::string keyPath);
+    SslServerContextManager(IoQueue& io, std::string certChainPath, std::string keyPath);
 
     std::shared_ptr<SslContext> getCurrentContext() const;
 
@@ -131,16 +133,38 @@ private:
     SslOperationState state_;
 };
 
-struct SslConnectionFactory {
+struct SslServerConnectionFactory {
     using Connection = SslConnection;
 
     // SslContextManager is not movable, because FileWatcher isn't (for good reason)
-    std::unique_ptr<SslContextManager> contextManager;
+    std::unique_ptr<SslServerContextManager> contextManager;
 
-    SslConnectionFactory(IoQueue& io, std::string certChainPath, std::string keyPath);
+    SslServerConnectionFactory(IoQueue& io, std::string certChainPath, std::string keyPath)
+        : contextManager(std::make_unique<SslServerContextManager>(
+            io, std::move(certChainPath), std::move(keyPath)))
+    {
+    }
 
     std::unique_ptr<Connection> create(IoQueue& io, int fd)
     {
         return std::make_unique<Connection>(io, fd, contextManager->getCurrentContext());
+    }
+};
+
+struct SslClientConnectionFactory {
+    using Connection = SslConnection;
+
+    // SslContextManager is not movable, because FileWatcher isn't (for good reason)
+    std::shared_ptr<SslContext> context;
+
+    SslClientConnectionFactory()
+        : context(std::make_shared<SslContext>(SslContext::Mode::Client))
+    {
+        context->initClient();
+    }
+
+    std::unique_ptr<Connection> create(IoQueue& io, int fd)
+    {
+        return std::make_unique<Connection>(io, fd, context);
     }
 };

@@ -96,7 +96,7 @@ int main(int argc, char** argv)
     std::vector<std::unique_ptr<Server<TcpConnectionFactory>>> tcpServers;
 
 #ifdef TLS_SUPPORT_ENABLED
-    std::vector<std::unique_ptr<Server<SslConnectionFactory>>> sslServers;
+    std::vector<std::unique_ptr<Server<SslServerConnectionFactory>>> sslServers;
 #endif
 
     for (const auto& service : config.services) {
@@ -104,12 +104,12 @@ int main(int argc, char** argv)
 
 #ifdef TLS_SUPPORT_ENABLED
         if (service.tls) {
-            auto factory = SslConnectionFactory(io, service.tls->chain, service.tls->key);
+            auto factory = SslServerConnectionFactory(io, service.tls->chain, service.tls->key);
             if (!factory.contextManager->getCurrentContext()) {
                 return 1;
             }
 
-            auto server = std::make_unique<Server<SslConnectionFactory>>(
+            auto server = std::make_unique<Server<SslServerConnectionFactory>>(
                 io, std::move(factory), handler, service);
             server->start();
             sslServers.push_back(std::move(server));
