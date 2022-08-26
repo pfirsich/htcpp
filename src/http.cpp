@@ -123,11 +123,11 @@ std::optional<Url> Url::parse(std::string_view urlStr)
 
     Url url;
     url.fullRaw = urlStr;
+    urlStr = std::string_view(url.fullRaw);
 
-    // see RFC2515, 5.1.2
-    if (url.fullRaw == "*") {
-        return url;
-    }
+    // There was a case for urlStr == "*" before, but it was referencing a section in an RFC does
+    // not exist. I'll leave this comment in case a more knowledgable me in the future knows what
+    // this was about.
 
     // I don't *actually* support CONNECT, so I will not parse authority URIs.
 
@@ -161,6 +161,7 @@ std::optional<Url> Url::parse(std::string_view urlStr)
         }
 
         if (isScheme) {
+            url.scheme = urlStr.substr(0, colon);
             // If we wanted to save the scheme
             urlStr = urlStr.substr(colon + 1);
         }
@@ -171,8 +172,26 @@ std::optional<Url> Url::parse(std::string_view urlStr)
         // I MUST (RFC2616, 5.2) with 400 if net_loc does not contain a valid host for this server,
         // but I don't want to add configuration for this, so I choose to be more "lenient" here and
         // ignore it completely. choose to be more "lenient" here and simply ignore it completely.
-        urlStr = urlStr.substr(2, urlStr.find("/", 2));
+        const auto pathStart = urlStr.find("/", 2);
+        if (pathStart == npos) {
+            return std::nullopt;
+        }
+        url.netLoc = urlStr.substr(2, pathStart - 2);
+        const auto at = url.netLoc.find('@');
+        const auto hostPortStart = at == npos ? 0 : at + 1;
+        const auto hostPort = url.netLoc.substr(hostPortStart);
+        const auto portDelim = hostPort.find(':');
+        url.host = hostPort.substr(0, portDelim);
+        if (portDelim != npos) {
+            const auto port = parseInt<uint16_t>(hostPort.substr(portDelim + 1));
+            if (!port) {
+                return std::nullopt;
+            }
+            url.port = *port;
+        }
+        urlStr = urlStr.substr(pathStart);
     }
+    url.targetRaw = urlStr;
 
     // RFC1808, 2.4.4
     const auto queryStart = urlStr.find('?');

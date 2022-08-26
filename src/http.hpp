@@ -178,13 +178,18 @@ private:
 };
 
 struct Url {
-    std::string_view fullRaw;
-    // It would be nice, if these could be string_views, but because of percent decoding and
-    // removing dot segments, we have to create copies.
+    std::string fullRaw;
+    // Most of these are view referencing 'fullRaw'.
+    std::string_view scheme;
+    std::string_view netLoc;
+    std::string_view host; // this is a substring of netLoc
+    uint16_t port = 0;
+    // This is not a view because of the removal of dot segments.
+    std::string_view targetRaw;
     std::string path;
-    std::string params;
-    std::string query;
-    std::string fragment; // This is not technically considered part of the URL (RFC1808)
+    std::string_view params;
+    std::string_view query;
+    std::string_view fragment; // This is not technically considered part of the URL (RFC1808)
 
     static std::optional<Url> parse(std::string_view urlStr);
 };
