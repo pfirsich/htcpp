@@ -89,6 +89,9 @@ public:
     SslConnection& operator=(const SslConnection&) = delete;
     SslConnection& operator=(SslConnection&&) = delete;
 
+    // For hostname validation (only applicable to client connection)
+    bool setHostname(const std::string& hostname);
+
     // If a handler of any of these three functions comes back with an error,
     // don't do any other IO on the socket and do not call shutdown (just close it).
     void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);

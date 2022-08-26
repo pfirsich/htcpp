@@ -237,7 +237,20 @@ SslConnection::SslConnection(IoQueue& io, int fd, std::shared_ptr<SslContext> co
         return;
     }
     SSL_set_bio(ssl_, internalBio, internalBio);
-    SSL_set_accept_state(ssl_);
+
+    // https://www.openssl.org/docs/man1.1.1/man3/SSL_set_connect_state.html
+    // Even though it may be clear from the method chosen, whether client or server mode was
+    // requested, the handshake routines must be explicitly set.
+    // If SSL_is_server() is called before SSL_set_connect_state() or SSL_set_accept_state() is
+    // called (either automatically or explicitly), the result depends on what method was used when
+    // SSL_CTX was created with SSL_CTX_new(3). If a generic method or a dedicated server method was
+    // passed to SSL_CTX_new(3), SSL_is_server() returns 1; otherwise, it returns 0.
+    // => It's very weird that I have to do this, but it seems I do.
+    if (SSL_is_server(ssl_)) {
+        SSL_set_accept_state(ssl_);
+    } else {
+        SSL_set_connect_state(ssl_);
+    }
 
     // https://www.openssl.org/docs/man1.1.1/man3/SSL_read.html
     // 16K is maximum TLS record size
@@ -258,6 +271,20 @@ SslConnection::~SslConnection()
 {
     SSL_free(ssl_);
     BIO_free(externalBio_);
+}
+
+bool SslConnection::setHostname(const std::string& hostname)
+{
+    assert(!SSL_is_server(ssl_));
+    SSL_set_hostflags(ssl_, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (!SSL_set1_host(ssl_, hostname.c_str())) {
+        slog::error("Could not set hostname for validation");
+        return false;
+    }
+    SSL_set_verify(ssl_, SSL_VERIFY_PEER, nullptr);
+    // Judging from the docs for SSL_set_verify and SSL_VERIFY_PEER I don't have to check
+    // SSL_get_verify_result when SSL_is_init_finished.
+    return true;
 }
 
 void SslConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler)
