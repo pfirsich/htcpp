@@ -492,3 +492,47 @@ std::string Response::string(std::string_view httpVersion) const
     s.append(body);
     return s;
 }
+
+std::optional<Response> Response::parse(std::string_view responseStr)
+{
+    if (responseStr.substr(0, 7) != "HTTP/1.") {
+        slog::debug("Response doesn't start with HTTP");
+        return std::nullopt;
+    }
+    const auto statusLineEnd = responseStr.find("\r\n");
+    if (!statusLineEnd) {
+        slog::debug("No status line end");
+        return std::nullopt;
+    }
+    const auto statusLine = responseStr.substr(0, statusLineEnd);
+
+    const auto statusStart = statusLine.find(' ') + 1;
+    const auto statusEnd = statusLine.find_first_of(" \r\n", statusStart);
+    const auto statusCodeStr = statusLine.substr(statusStart, statusEnd - statusStart);
+    const auto statusCode = parseInt<uint32_t>(statusCodeStr);
+    if (!statusCode) {
+        slog::debug("Invalid status code: '", statusCodeStr, "'");
+        return std::nullopt;
+    }
+
+    const auto headersStart = statusLineEnd + 2;
+    const auto headersEnd = responseStr.find("\r\n\r\n", headersStart);
+
+    if (headersEnd == std::string_view::npos) {
+        slog::debug("No headers end");
+        return std::nullopt;
+    }
+
+    Response resp;
+
+    resp.status = static_cast<StatusCode>(*statusCode);
+
+    // +2 so the last header line is terminated as well (makes parsing the headers easier)
+    if (!resp.headers.parse(responseStr.substr(headersStart, headersEnd + 2 - headersStart))) {
+        return std::nullopt;
+    }
+
+    resp.body = responseStr.substr(headersEnd + 4);
+
+    return resp;
+}

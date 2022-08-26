@@ -157,6 +157,10 @@ struct Request {
 };
 
 struct Response {
+    StatusCode status = StatusCode::Ok;
+    HeaderMap<std::string> headers;
+    std::string body = {};
+
     Response();
 
     Response(std::string body);
@@ -173,7 +177,5 @@ struct Response {
 
     std::string string(std::string_view httpVersion) const;
 
-    StatusCode status = StatusCode::Ok;
-    HeaderMap<std::string> headers;
-    std::string body = {};
+    static std::optional<Response> parse(std::string_view responseStr);
 };
