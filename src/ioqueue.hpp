@@ -36,6 +36,8 @@ public:
     // res argument is socket fd
     bool accept(int fd, sockaddr_in* addr, socklen_t* addrlen, HandlerEcRes cb);
 
+    bool connect(int sockfd, const ::sockaddr* addr, socklen_t addrlen, HandlerEc cb);
+
     // res argument is sent bytes
     bool send(int sockfd, const void* buf, size_t len, HandlerEcRes cb);
 

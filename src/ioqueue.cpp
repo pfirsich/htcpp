@@ -58,6 +58,11 @@ bool IoQueue::accept(int fd, sockaddr_in* addr, socklen_t* addrlen, HandlerEcRes
         ring_.prepareAccept(fd, reinterpret_cast<sockaddr*>(addr), addrlen), std::move(cb));
 }
 
+bool IoQueue::connect(int sockfd, const ::sockaddr* addr, socklen_t addrlen, HandlerEc cb)
+{
+    return addSqe(ring_.prepareConnect(sockfd, addr, addrlen), std::move(cb));
+}
+
 bool IoQueue::send(int sockfd, const void* buf, size_t len, HandlerEcRes cb)
 {
     return addSqe(ring_.prepareSend(sockfd, buf, len), std::move(cb));
