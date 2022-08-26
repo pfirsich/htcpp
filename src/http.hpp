@@ -98,84 +98,33 @@ enum class StatusCode {
     NetworkAuthenticationRequired = 511,
 };
 
-template <typename StringType>
+template <typename StringType = std::string>
 class HeaderMap {
 public:
-    bool contains(std::string_view name) const
-    {
-        return find(name).has_value();
-    }
+    HeaderMap() = default;
+    HeaderMap(std::vector<std::pair<StringType, StringType>> h);
 
-    std::optional<std::string_view> get(std::string_view name) const
-    {
-        const auto idx = find(name);
-        if (idx) {
-            return headers_[*idx].second;
-        } else {
-            return std::nullopt;
-        }
-    }
+    bool contains(std::string_view name) const;
+    std::optional<std::string_view> get(std::string_view name) const;
+    std::vector<std::string_view> getAll(std::string_view name) const;
+    std::optional<std::string_view> operator[](std::string_view name) const; // get
+    const std::vector<std::pair<StringType, StringType>>& getEntries() const;
 
-    std::vector<std::string_view> getAll(std::string_view name) const
-    {
-        std::vector<std::string_view> values;
-        for (const auto& [k, v] : headers_) {
-            if (ciEqual(k, name)) {
-                values.push_back(v);
-            }
-        }
-        return values;
-    }
+    void add(std::string_view name, std::string_view value);
+    size_t set(std::string_view name, std::string_view value);
+    size_t remove(std::string_view name);
 
-    void add(std::string_view name, std::string_view value)
-    {
-        headers_.emplace_back(StringType(name), StringType(value));
-    }
-
-    size_t set(std::string_view name, std::string_view value)
-    {
-        const auto removed = remove(name);
-        add(name, value);
-        return removed;
-    }
-
-    size_t remove(std::string_view name)
-    {
-        size_t removed = 0;
-        for (auto it = headers_.begin(); it != headers_.end();) {
-            if (ciEqual(it->first, name)) {
-                it = headers_.erase(it);
-                removed++;
-            } else {
-                ++it;
-            }
-        }
-        return removed;
-    }
-
-    std::optional<std::string_view> operator[](std::string_view name) const
-    {
-        return get(name);
-    }
-
-    const std::vector<std::pair<StringType, StringType>>& getEntries() const
-    {
-        return headers_;
-    }
+    bool parse(std::string_view str);
+    void serialize(std::string& str) const;
 
 private:
-    std::optional<size_t> find(std::string_view name) const
-    {
-        for (size_t i = 0; i < headers_.size(); ++i) {
-            if (ciEqual(headers_[i].first, name)) {
-                return i;
-            }
-        }
-        return std::nullopt;
-    }
+    std::optional<size_t> find(std::string_view name) const;
 
     std::vector<std::pair<StringType, StringType>> headers_;
 };
+
+extern template class HeaderMap<std::string_view>;
+extern template class HeaderMap<std::string>;
 
 struct Url {
     std::string fullRaw;

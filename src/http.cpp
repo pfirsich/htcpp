@@ -56,6 +56,131 @@ std::string toString(Method method)
     }
 }
 
+template <typename StringType>
+HeaderMap<StringType>::HeaderMap(std::vector<std::pair<StringType, StringType>> h)
+    : headers_(std::move(h))
+{
+}
+
+template <typename StringType>
+bool HeaderMap<StringType>::contains(std::string_view name) const
+{
+    return find(name).has_value();
+}
+
+template <typename StringType>
+std::optional<std::string_view> HeaderMap<StringType>::get(std::string_view name) const
+{
+    const auto idx = find(name);
+    if (idx) {
+        return headers_[*idx].second;
+    } else {
+        return std::nullopt;
+    }
+}
+
+template <typename StringType>
+std::vector<std::string_view> HeaderMap<StringType>::getAll(std::string_view name) const
+{
+    std::vector<std::string_view> values;
+    for (const auto& [k, v] : headers_) {
+        if (ciEqual(k, name)) {
+            values.push_back(v);
+        }
+    }
+    return values;
+}
+
+template <typename StringType>
+void HeaderMap<StringType>::add(std::string_view name, std::string_view value)
+{
+    headers_.emplace_back(StringType(name), StringType(value));
+}
+
+template <typename StringType>
+size_t HeaderMap<StringType>::set(std::string_view name, std::string_view value)
+{
+    const auto removed = remove(name);
+    add(name, value);
+    return removed;
+}
+
+template <typename StringType>
+size_t HeaderMap<StringType>::remove(std::string_view name)
+{
+    size_t removed = 0;
+    for (auto it = headers_.begin(); it != headers_.end();) {
+        if (ciEqual(it->first, name)) {
+            it = headers_.erase(it);
+            removed++;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
+template <typename StringType>
+std::optional<std::string_view> HeaderMap<StringType>::operator[](std::string_view name) const
+{
+    return get(name);
+}
+
+template <typename StringType>
+const std::vector<std::pair<StringType, StringType>>& HeaderMap<StringType>::getEntries() const
+{
+    return headers_;
+}
+
+template <typename StringType>
+void HeaderMap<StringType>::serialize(std::string& str) const
+{
+    for (const auto& [name, value] : headers_) {
+        str.append(name);
+        str.append(": ");
+        str.append(value);
+        str.append("\r\n");
+    }
+}
+
+template <typename StringType>
+bool HeaderMap<StringType>::parse(std::string_view str)
+{
+    size_t cursor = 0;
+    while (cursor < str.size()) {
+        const auto headerLineEnd = str.find("\r\n", cursor);
+        const auto line = str.substr(cursor,
+            headerLineEnd == std::string_view::npos ? headerLineEnd : headerLineEnd - cursor);
+        auto colon = line.find(':');
+        if (colon == std::string_view::npos) {
+            slog::debug("No colon in header line");
+            return false;
+        }
+        const auto name = line.substr(0, colon);
+        const auto value = httpTrim(line.substr(colon + 1));
+        add(name, value);
+        if (headerLineEnd == std::string_view::npos) {
+            break;
+        }
+        cursor = headerLineEnd + 2;
+    }
+    return true;
+}
+
+template <typename StringType>
+std::optional<size_t> HeaderMap<StringType>::find(std::string_view name) const
+{
+    for (size_t i = 0; i < headers_.size(); ++i) {
+        if (ciEqual(headers_[i].first, name)) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+template class HeaderMap<std::string_view>;
+template class HeaderMap<std::string>;
+
 namespace {
 std::string removeDotSegments(std::string_view input)
 {
@@ -274,36 +399,17 @@ std::optional<Request> Request::parse(std::string_view requestStr)
         return std::nullopt;
     }
 
-    auto headerLineStart = requestLineEnd + 2;
-    const auto headersEnd = requestStr.find("\r\n\r\n", headerLineStart);
+    const auto headersStart = requestLineEnd + 2;
+    const auto headersEnd = requestStr.find("\r\n\r\n", headersStart);
 
     if (headersEnd == std::string_view::npos) {
         slog::debug("No headers end");
         return std::nullopt;
     }
 
-    while (headerLineStart < headersEnd) {
-        const auto headerLineEnd = requestStr.find("\r\n", headerLineStart);
-        if (headerLineEnd == std::string_view::npos) {
-            slog::debug("No header line end");
-            return std::nullopt;
-        }
-        if (headerLineStart == headerLineEnd) {
-            // skip newlines and end header parsing
-            headerLineStart += 2;
-            break;
-        } else {
-            const auto line = requestStr.substr(headerLineStart, headerLineEnd - headerLineStart);
-            auto colon = line.find(':');
-            if (colon == std::string_view::npos) {
-                slog::debug("No colon");
-                return std::nullopt;
-            }
-            const auto name = line.substr(0, colon);
-            const auto value = httpTrim(line.substr(colon + 1));
-            req.headers.add(name, value);
-            headerLineStart = headerLineEnd + 2;
-        }
+    // +2 to terminate the last header line
+    if (!req.headers.parse(requestStr.substr(headersStart, headersEnd + 2 - headersStart))) {
+        return std::nullopt;
     }
 
     req.body = requestStr.substr(headersEnd + 4);
@@ -376,18 +482,8 @@ std::string Response::string(std::string_view httpVersion) const
     s.append(std::to_string(static_cast<int>(status)));
     // The reason phrase may be empty, but the separator space is not optional
     s.append(" \r\n");
-
-    bool hasContentLength = false;
-    for (const auto& [name, value] : headerEntries) {
-        if (ciEqual(name, "Content-Length")) {
-            hasContentLength = true;
-        }
-        s.append(name);
-        s.append(": ");
-        s.append(value);
-        s.append("\r\n");
-    }
-    if (!hasContentLength && !body.empty()) {
+    headers.serialize(s);
+    if (!headers.contains("Content-Length") && !body.empty()) {
         s.append("Content-Length: ");
         s.append(std::to_string(body.size()));
         s.append("\r\n");
