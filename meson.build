@@ -76,3 +76,11 @@ executable('libexample', 'src/libexample.cpp',
     htcpp_dep,
   ],
 )
+
+executable('clienttest', 'src/clienttest.cpp',
+  cpp_args : flags,
+  include_directories : ['src'],
+  dependencies : [
+    htcpp_dep,
+  ],
+)
