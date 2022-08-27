@@ -157,7 +157,7 @@ IoQueue::NotifyHandle IoQueue::wait(std::function<void(std::error_code, uint64_t
 
 void IoQueue::run()
 {
-    while (true) {
+    while (completionHandlers_.size() > 0) {
         const auto res = ring_.submitSqes(1);
         if (res < 0) {
             slog::error("Error submitting SQEs: ", errnoToString(errno));
