@@ -8,6 +8,7 @@
 
 #include <netinet/in.h>
 
+#include "events.hpp"
 #include "iouring.hpp"
 #include "log.hpp"
 #include "slotmap.hpp"
@@ -33,6 +34,10 @@ public:
 
     size_t getCapacity() const;
 
+    // TODO: Support cancellation by returning a RequestHandle wrapping an uint64_t containing the
+    // SQE userData. Add an operator bool to replicate the old behaviour and add
+    // cancel(RequestHandle), that generates an IORING_OP_ASYNC_CANCEL with the wrapped userData.
+
     // res argument is socket fd
     bool accept(int fd, sockaddr_in* addr, socklen_t* addrlen, HandlerEcRes cb);
 
@@ -57,31 +62,25 @@ public:
 
     class NotifyHandle {
     public:
-        NotifyHandle(int fd);
-        ~NotifyHandle() = default;
-        NotifyHandle(const NotifyHandle&) = delete;
-        NotifyHandle& operator=(const NotifyHandle&) = delete;
-        NotifyHandle(NotifyHandle&&) = default;
-        NotifyHandle& operator=(NotifyHandle&&) = default;
+        NotifyHandle(std::shared_ptr<EventFd> eventFd);
 
         // wait might fail, in which case this will return false
         explicit operator bool() const;
 
-        // This will do a write on an eventfd, but it will not do it asynchronously, because it was
-        // introduced to be used from other threads (async below), which would require IoQueue to be
-        // thread-safe which it is not (at all).
-        // This means that if you do it from the thread that processes the IoQueue (the main
-        // thread), you need to be aware that this might block (unlikely though).
+        // Note that all restrictions on EventFd::write apply here as well (writes synchronously, so
+        // don't use from the main thread, but can be used from other threads).
         // Also this function must be called exactly once. If it is not called, the async read on
         // the eventfd will never terminate. If you call it more than once, there is no read queued
         // up, so this function will abort.
         void notify(uint64_t value = 1);
 
     private:
-        int fd_;
+        // We need shared ownership, because wait will issue an async read, which needs to have
+        // ownership of this event fd as well.
+        std::shared_ptr<EventFd> eventFd_;
     };
 
-    // This is a wrapper of a subset of eventfd functionality.
+    // This will call a handler callback, when the NotifyHandle is notified.
     // The value passed to NotifyHandle::notify will be passed to the handler cb.
     NotifyHandle wait(std::function<void(std::error_code, uint64_t)> cb);
 

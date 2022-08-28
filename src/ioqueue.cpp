@@ -99,59 +99,38 @@ bool IoQueue::poll(int fd, short events, HandlerEcRes cb)
     return addSqe(ring_.preparePollAdd(fd, events), std::move(cb));
 }
 
-IoQueue::NotifyHandle::NotifyHandle(int fd)
-    : fd_(fd)
+IoQueue::NotifyHandle::NotifyHandle(std::shared_ptr<EventFd> eventFd)
+    : eventFd_(std::move(eventFd))
 {
 }
 
 IoQueue::NotifyHandle::operator bool() const
 {
-    return fd_ != -1;
+    return eventFd_ != nullptr;
 }
 
 void IoQueue::NotifyHandle::notify(uint64_t value)
 {
-    assert(fd_ != -1);
-    const auto res = ::write(fd_, &value, sizeof(uint64_t));
-    if (res != sizeof(uint64_t)) {
-        // We cannot call the handler (can't reach it from here).
-        // We cannot cancel or terminate the read somehow (no functionality like that yet).
-        // If we close fd_, the read will be stuck forever (tried it out).
-        // This is used for certificate reloading, so if this fails here, we will never update the
-        // certificate, when we should.
-        // It's also used for expensive async operations while handling HTTP requests and if we fail
-        // here those requests would hang forever.
-        // I think the right thing to do here is exit.
-        slog::fatal("Error writing to eventfd: ",
-            std::make_error_code(static_cast<std::errc>(errno)).message());
-        std::exit(1);
-    }
-    fd_ = -1;
+    assert(eventFd_);
+    eventFd_->write(value);
+    eventFd_.reset();
 }
 
 IoQueue::NotifyHandle IoQueue::wait(std::function<void(std::error_code, uint64_t)> cb)
 {
-    const auto fd = ::eventfd(0, 0);
-    auto buf = std::make_shared<uint64_t>(0);
-    auto bufData = buf.get();
-    const auto res = read(fd, bufData, sizeof(uint64_t),
-        [fd, buf = std::move(buf), cb = std::move(cb)](std::error_code ec, int res) {
-            ::close(fd);
-            if (ec) {
-                cb(ec, 0);
-            } else {
-                // man 2 eventfd: Each successful read(2) returns an 8-byte integer.
-                // The example does handle the case of res != 8, but I don't really know
-                // what I am not sure what I should do in that case, so I assert for now.
-                assert(res == sizeof(uint64_t));
-                cb(std::error_code(), *buf);
-            }
-        });
+    auto eventFd = std::make_shared<EventFd>(*this);
+    const auto res
+        = eventFd->read([eventFd, cb = std::move(cb)](std::error_code ec, uint64_t value) {
+              if (ec) {
+                  cb(ec, 0);
+              } else {
+                  cb(std::error_code(), value);
+              }
+          });
     if (res) {
-        return NotifyHandle { fd };
+        return NotifyHandle { std::move(eventFd) };
     } else {
-        ::close(fd);
-        return NotifyHandle { -1 };
+        return NotifyHandle { nullptr };
     }
 }
 
