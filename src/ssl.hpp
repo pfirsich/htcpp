@@ -24,9 +24,9 @@ std::string sslErrorToString(int sslError);
 
 class SslContext {
 public:
-    static std::optional<SslContext> createServer(
+    static std::unique_ptr<SslContext> createServer(
         const std::string& certChainPath, const std::string& keyPath);
-    static std::optional<SslContext> createClient();
+    static std::unique_ptr<SslContext> createClient();
 
     enum class Mode { Invalid = 0, Client, Server };
 
@@ -64,6 +64,16 @@ private:
     std::shared_ptr<SslContext> currentContext_;
     IoQueue& io_;
     FileWatcher fileWatcher_;
+};
+
+class SslClientContextManager {
+public:
+    SslClientContextManager();
+
+    std::shared_ptr<SslContext> getCurrentContext() const;
+
+private:
+    std::shared_ptr<SslContext> currentContext_;
 };
 
 struct OpenSslErrorCategory : public std::error_category {
@@ -133,38 +143,24 @@ private:
     SslOperationState state_;
 };
 
-struct SslServerConnectionFactory {
+template <typename ContextManager>
+struct SslConnectionFactory {
     using Connection = SslConnection;
 
-    // SslContextManager is not movable, because FileWatcher isn't (for good reason)
-    std::unique_ptr<SslServerContextManager> contextManager;
+    std::unique_ptr<ContextManager> contextManager;
 
-    SslServerConnectionFactory(IoQueue& io, std::string certChainPath, std::string keyPath)
-        : contextManager(std::make_unique<SslServerContextManager>(
-            io, std::move(certChainPath), std::move(keyPath)))
+    template <typename... Args>
+    SslConnectionFactory(Args&&... args)
+        : contextManager(std::make_unique<ContextManager>(std::forward<Args>(args)...))
     {
     }
 
     std::unique_ptr<Connection> create(IoQueue& io, int fd)
     {
-        return std::make_unique<Connection>(io, fd, contextManager->getCurrentContext());
+        auto context = contextManager->getCurrentContext();
+        return context ? std::make_unique<Connection>(io, fd, std::move(context)) : nullptr;
     }
 };
 
-struct SslClientConnectionFactory {
-    using Connection = SslConnection;
-
-    // SslContextManager is not movable, because FileWatcher isn't (for good reason)
-    std::shared_ptr<SslContext> context;
-
-    SslClientConnectionFactory()
-        : context(std::make_shared<SslContext>(SslContext::Mode::Client))
-    {
-        context->initClient();
-    }
-
-    std::unique_ptr<Connection> create(IoQueue& io, int fd)
-    {
-        return std::make_unique<Connection>(io, fd, context);
-    }
-};
+using SslClientConnectionFactory = SslConnectionFactory<SslClientContextManager>;
+using SslServerConnectionFactory = SslConnectionFactory<SslServerContextManager>;

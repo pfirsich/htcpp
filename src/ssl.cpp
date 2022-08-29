@@ -59,29 +59,29 @@ std::string sslErrorToString(int sslError)
     }
 }
 
-std::optional<SslContext> SslContext::createServer(
+std::unique_ptr<SslContext> SslContext::createServer(
     const std::string& certChainPath, const std::string& keyPath)
 {
-    auto ctx = SslContext(SslContext::Mode::Server);
-    if (!static_cast<SSL_CTX*>(ctx)) {
-        return std::nullopt;
+    auto context = std::make_unique<SslContext>(SslContext::Mode::Server);
+    if (!static_cast<SSL_CTX*>(*context)) {
+        return nullptr;
     }
-    if (!ctx.initServer(certChainPath, keyPath)) {
-        return std::nullopt;
+    if (!context->initServer(certChainPath, keyPath)) {
+        return nullptr;
     }
-    return ctx;
+    return context;
 }
 
-std::optional<SslContext> SslContext::createClient()
+std::unique_ptr<SslContext> SslContext::createClient()
 {
-    auto ctx = SslContext(SslContext::Mode::Client);
-    if (!static_cast<SSL_CTX*>(ctx)) {
-        return std::nullopt;
+    auto context = std::make_unique<SslContext>(SslContext::Mode::Client);
+    if (!static_cast<SSL_CTX*>(*context)) {
+        return nullptr;
     }
-    if (!ctx.initClient()) {
-        return std::nullopt;
+    if (!context->initClient()) {
+        return nullptr;
     }
-    return ctx;
+    return context;
 }
 
 // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_new.html
@@ -176,15 +176,13 @@ void SslServerContextManager::fileWatcherCallback(std::error_code ec)
     }
     // TODO: Introduce some delay so we don't reload the certificate twice, when both the
     // certificate chain file and the private key changed shortly after another.
-    io_.async<std::optional<SslContext>>(
-        [this]() -> std::optional<SslContext> {
-            return SslContext::createServer(certChainPath_, keyPath_);
-        },
-        [this](std::error_code ec, std::optional<SslContext>&& context) -> void {
+    io_.async<std::unique_ptr<SslContext>>(
+        [this]() { return SslContext::createServer(certChainPath_, keyPath_); },
+        [this](std::error_code ec, std::unique_ptr<SslContext>&& context) -> void {
             if (ec) {
                 slog::error("Error during certificate reload: ", ec.message());
             } else if (context) {
-                currentContext_ = std::make_shared<SslContext>(std::move(*context));
+                currentContext_ = std::move(context);
             }
             // If context is empty, we already logged a message
         });
@@ -197,11 +195,21 @@ std::shared_ptr<SslContext> SslServerContextManager::getCurrentContext() const
 
 void SslServerContextManager::updateContext()
 {
-    auto ctx = SslContext::createServer(certChainPath_, keyPath_);
-    if (!ctx) {
+    auto context = SslContext::createServer(certChainPath_, keyPath_);
+    if (!context) {
         return;
     }
-    currentContext_ = std::make_shared<SslContext>(std::move(*ctx));
+    currentContext_ = std::move(context);
+}
+
+SslClientContextManager::SslClientContextManager()
+    : currentContext_(SslContext::createClient())
+{
+}
+
+std::shared_ptr<SslContext> SslClientContextManager::getCurrentContext() const
+{
+    return currentContext_;
 }
 
 const char* OpenSslErrorCategory::name() const noexcept
