@@ -61,6 +61,7 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 * URL percent decoding (since I only save Url::path and saving a decoded path component in there would simply make it incorrect, it is the router that has to be percent-encoding aware)
 * Directory Listings
 * Optionally use MD5/SHA1 for ETag
+* Add some tests 😬 (maybe have a Python script run the server with certain configs and test responses)
 
 ## To Do (Could)
 * Large file transfer (with `sendfile` or `slice`)
