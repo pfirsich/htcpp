@@ -46,7 +46,6 @@ public:
             // Request already in progress. Pipelining is not supported.
             return false;
         }
-        slog::debug("doing it");
         callback_ = std::move(cb);
         requestBuffer_ = serializeRequest(method, target, headers, requestBody);
         slog::info("request:\n", requestBuffer_);
@@ -73,7 +72,6 @@ private:
 
     void resolve()
     {
-        slog::debug("resolve");
         io_.async<std::vector<::sockaddr_storage>>(
             [this, self = this->shared_from_this()]() {
                 struct ::addrinfo hints;
@@ -99,6 +97,7 @@ private:
             [this, self = this->shared_from_this()](
                 std::error_code ec, std::vector<::sockaddr_storage>&& addrs) {
                 if (ec) {
+                    slog::error("Error doing async resolve: ", ec.message());
                     callback_(ec, Response());
                     return;
                 }
@@ -115,13 +114,13 @@ private:
 
     void connect()
     {
-        slog::debug("connect");
         assert(!connection_);
         if (connectAddr_.ss_family == AF_UNSPEC) {
             resolve();
         } else {
             const auto sock = ::socket(connectAddr_.ss_family, SOCK_STREAM, 0);
             if (sock == -1) {
+                slog::error("Error creating socket: ", errnoToString(errno));
                 callback_(std::make_error_code(static_cast<std::errc>(errno)), Response());
             }
             assert(connectAddr_.ss_family == AF_INET || connectAddr_.ss_family == AF_INET6);
@@ -169,7 +168,6 @@ private:
                 }
 
                 recvHeader();
-                callback_(std::error_code(), Response());
             });
     }
 
@@ -222,6 +220,7 @@ private:
                     }
                 }
                 callback_(std::error_code(), std::move(*response));
+                callback_ = nullptr;
             });
     }
 
@@ -269,10 +268,6 @@ void request(IoQueue& io, Method method, const std::string_view urlStr, const He
         cb(std::make_error_code(std::errc::invalid_argument), Response());
         return;
     }
-    slog::debug("scheme: ", url->scheme);
-    slog::debug("host: ", url->host);
-    slog::debug("port: ", url->port);
-    slog::debug("target: ", url->targetRaw);
     if (url->scheme == "http") {
         auto session = ClientSession<TcpConnectionFactory>::create(io, url->host, url->port);
         session->request(method, url->targetRaw, headers, requestBody, std::move(cb));
