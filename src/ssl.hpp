@@ -129,6 +129,8 @@ private:
     static SslOperationResult performSslOperation(
         SslOperation op, SSL* ssl, void* buffer, int length);
 
+    void sendFromBuffer(size_t offset, size_t size);
+
     void startSslOperation(
         SslOperation op, void* buffer, int length, IoQueue::HandlerEcRes handler);
     void performSslOperation();

@@ -408,6 +408,31 @@ void SslConnection::completeSslOperation(std::error_code ec, int result)
     handler(ec, result);
 }
 
+void SslConnection::sendFromBuffer(size_t offset, size_t size)
+{
+    io_.send(fd_, sendBuffer_.data() + offset, size,
+        [this, offset, size](std::error_code ec, int sentBytes) {
+            if (ec) {
+                slog::debug("Error in send (SSL): ", ec.message());
+                // Because a read error would result in a SSL_ERROR_SYSCALL if OpenSSL did
+                // the syscalls itself, we also should not call SSL_shutdown.
+                completeSslOperation(ec, -1);
+                return;
+            }
+
+            if (sentBytes == 0) {
+                completeSslOperation(std::error_code {}, 0);
+                return;
+            }
+
+            if (static_cast<size_t>(sentBytes) < size) {
+                sendFromBuffer(offset + sentBytes, size - sentBytes);
+            } else {
+                updateSslOperation();
+            }
+        });
+}
+
 void SslConnection::processSslOperationResult(const SslOperationResult& result)
 {
     // Number of bytes that are waiting to be sent
@@ -434,24 +459,7 @@ void SslConnection::processSslOperationResult(const SslOperationResult& result)
         // This assert is preliminary
         assert(pending == static_cast<size_t>(readFromBio));
 
-        io_.send(fd_, sendBuffer_.data(), readFromBio,
-            [this, readFromBio](std::error_code ec, int sentBytes) {
-                if (ec) {
-                    slog::debug("Error in send (SSL): ", ec.message());
-                    // Because a read error would result in a SSL_ERROR_SYSCALL if OpenSSL did
-                    // the syscalls itself, we also should not call SSL_shutdown.
-                    completeSslOperation(ec, -1);
-                    return;
-                }
-
-                if (sentBytes == 0) {
-                    completeSslOperation(std::error_code {}, 0);
-                    return;
-                }
-
-                assert(readFromBio == sentBytes);
-                updateSslOperation();
-            });
+        sendFromBuffer(0, readFromBio);
     } else if (result.error == SSL_ERROR_WANT_READ) {
         io_.recv(
             fd_, recvBuffer_.data(), recvBuffer_.size(), [this](std::error_code ec, int readBytes) {
