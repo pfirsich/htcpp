@@ -64,6 +64,7 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 * Optionally use MD5/SHA1 for ETag
 * Add some tests 😬 (maybe have a Python script run the server with certain configs and test responses)
 * Test with certbot: Now that I have reloading of certificates and I can configure multiple sites (to host `.well-known/acme-challenge` on port 80), I think I have everything that I need.
+* Replace shared_ptr captured by std::function with unique_ptr captured by a move-only function (I think this should work and should be much faster)
 
 ## To Do (Could)
 * Large file transfer (with `sendfile` or `slice`)
