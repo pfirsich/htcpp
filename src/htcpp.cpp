@@ -16,19 +16,14 @@ template <>
 struct clipp::Value<IpPort> {
     static constexpr std::string_view typeName = "[address:]port";
 
-    static std::optional<IpPort> parse(std::string_view str)
-    {
-        return IpPort::parse(str);
-    }
+    static std::optional<IpPort> parse(std::string_view str) { return IpPort::parse(str); }
 };
 
 struct Args : clipp::ArgsBase {
     std::optional<IpPort> listen;
-    bool debug;
+    bool debug = false;
+    bool checkConfig = false;
     // bool followSymlinks;
-#ifdef TLS_SUPPORT_ENABLED
-    std::vector<std::string> tls;
-#endif
     // bool browse;
     std::optional<std::string> metrics;
     std::optional<std::string> arg = ".";
@@ -37,10 +32,8 @@ struct Args : clipp::ArgsBase {
     {
         flag(listen, "listen", 'l').valueNames("IPPORT").help("ip:port or port");
         flag(debug, "debug").help("Enable debug logging");
+        flag(checkConfig, "check-config").help("Check the configuration and exit");
         // flag(followSymlinks, "follow", 'f').help("Follow symlinks");
-#ifdef TLS_SUPPORT_ENABLED
-        flag(tls, "tls").num(2).valueNames("CERT", "KEY");
-#endif
         // flag(browse, "browse", 'b');
         flag(metrics, "metrics", 'm')
             .valueNames("ENDPOINT")
@@ -73,18 +66,16 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    if (args.checkConfig) {
+        return 0;
+    }
+
     if (args.listen) {
         if (args.listen->ip) {
             config.services.back().listenAddress = *args.listen->ip;
         }
         config.services.back().listenPort = args.listen->port;
     }
-
-#ifdef TLS_SUPPORT_ENABLED
-    if (!args.tls.empty()) {
-        config.services.back().tls.emplace(Config::Service::Tls { args.tls[0], args.tls[1] });
-    }
-#endif
 
     IoQueue io(config.ioQueueSize, config.ioSubmissionQueuePolling);
 
