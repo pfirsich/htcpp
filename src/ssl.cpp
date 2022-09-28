@@ -366,9 +366,7 @@ SslConnection::SslOperationResult SslConnection::performSslOperation(
     }
 
     const auto error = SSL_get_error(ssl, result);
-
-    ::ERR_clear_error();
-
+    // Keep the error in the queue for later calls to ERR_peek_error()
     return SslOperationResult { result, error };
 }
 
