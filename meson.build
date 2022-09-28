@@ -11,6 +11,7 @@ liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_
 flags = []
 
 lib_src = [
+  'src/client.cpp',
   'src/events.cpp',
   'src/fd.cpp',
   'src/filecache.cpp',
