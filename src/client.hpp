@@ -48,7 +48,6 @@ public:
         }
         callback_ = std::move(cb);
         requestBuffer_ = serializeRequest(method, target, headers, requestBody);
-        slog::info("request:\n", requestBuffer_);
         if (!connection_) {
             connect();
         }
@@ -174,8 +173,8 @@ private:
     void recvHeader()
     {
         const auto recvLen = 1024;
-        responseBuffer_.resize(recvLen, '\0');
-        connection_->recv(responseBuffer_.data(), recvLen,
+        recvBuffer_.resize(recvLen, '\0');
+        connection_->recv(recvBuffer_.data(), recvLen,
             [this, self = this->shared_from_this(), recvLen](std::error_code ec, int readBytes) {
                 if (ec) {
                     slog::error("Error in recv (headers): ", ec.message());
@@ -191,18 +190,18 @@ private:
                     return;
                 }
 
-                responseBuffer_.resize(responseBuffer_.size() - recvLen + readBytes);
+                recvBuffer_.resize(recvBuffer_.size() - recvLen + readBytes);
 
-                slog::info("response:\n", responseBuffer_);
-                auto response = Response::parse(responseBuffer_);
+                auto response = Response::parse(recvBuffer_);
                 if (!response) {
                     slog::error("Could not parse response");
                     callback_(std::make_error_code(std::errc::invalid_argument), Response());
                     connection_->close();
                     return;
                 }
+                response_ = std::move(*response);
 
-                const auto contentLength = response->headers.get("Content-Length");
+                const auto contentLength = response_.headers.get("Content-Length");
                 if (contentLength) {
                     const auto length = parseInt<uint64_t>(*contentLength);
                     if (!length) {
@@ -212,16 +211,58 @@ private:
                         return;
                     }
 
-                    if (response->body.size() < *length) {
-                        // TODO: READ THE REST
-                        slog::error("READ THE REST");
+                    if (response_.body.size() < *length) {
+                        recvBody(*length);
                     } else {
-                        response->body = response->body.substr(0, *length);
+                        response_.body = response_.body.substr(0, *length);
+                        processResponse();
                     }
+                } else {
+                    processResponse();
                 }
-                callback_(std::error_code(), std::move(*response));
-                callback_ = nullptr;
             });
+    }
+
+    void recvBody(size_t contentLength)
+    {
+        const auto sizeBeforeRead = response_.body.size();
+        assert(sizeBeforeRead < contentLength);
+        const auto recvLen = contentLength - sizeBeforeRead;
+        response_.body.append(recvLen, '\0');
+        const auto buffer = response_.body.data() + sizeBeforeRead;
+        connection_->recv(buffer, recvLen,
+            [this, self = this->shared_from_this(), recvLen, contentLength](
+                std::error_code ec, int readBytes) {
+                if (ec) {
+                    slog::error("Error in recv (body): ", ec.message());
+                    callback_(ec, Response());
+                    connection_->close();
+                    return;
+                }
+
+                if (readBytes == 0) {
+                    slog::error("Connection closed");
+                    callback_(std::make_error_code(std::errc::host_unreachable), Response());
+                    connection_->close();
+                    return;
+                }
+
+                response_.body.resize(response_.body.size() - recvLen + readBytes);
+
+                if (response_.body.size() < contentLength) {
+                    recvBody(contentLength);
+                } else {
+                    assert(response_.body.size() == contentLength);
+                    processResponse();
+                }
+            });
+    }
+
+    void processResponse()
+    {
+        callback_(std::error_code(), std::move(response_));
+        callback_ = nullptr;
+        connection_->close();
     }
 
     std::string serializeRequest(
@@ -243,6 +284,9 @@ private:
             req.append("\r\n");
         }
         headers.serialize(req);
+        if (body.size() && !headers.contains("Content-Length")) {
+            req.append("Content-Length: " + std::to_string(body.size()) + "\r\n");
+        }
         req.append("\r\n");
         req.append(body);
         return req;
@@ -254,7 +298,8 @@ private:
     sockaddr_storage connectAddr_;
     Callback callback_ = nullptr;
     std::string requestBuffer_;
-    std::string responseBuffer_;
+    Response response_;
+    std::string recvBuffer_;
     size_t sendCursor_ = 0;
     std::unique_ptr<Connection> connection_;
 };
