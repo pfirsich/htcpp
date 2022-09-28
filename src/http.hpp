@@ -177,7 +177,7 @@ struct Response {
 
     void addServerHeader();
 
-    std::string string(std::string_view httpVersion) const;
+    std::string string(std::string_view httpVersion = "HTTP/1.1") const;
 
     static std::optional<Response> parse(std::string_view responseStr);
 };

@@ -1,10 +1,18 @@
 #include "config.hpp"
 
+#include <cassert>
+#include <filesystem>
+
+#include <pwd.h>
+#include <unistd.h>
+
+#include <joml.hpp>
+
 #include "log.hpp"
 #include "string.hpp"
 #include "util.hpp"
 
-#include <joml.hpp>
+namespace fs = std::filesystem;
 
 namespace {
 template <typename T>
@@ -52,67 +60,286 @@ std::optional<std::string> substituteEnvVars(std::string_view source)
     return ret;
 }
 
+template <typename T>
+bool loadSingle(const joml::Node& value, std::string_view name, std::string_view typeName, T& dest)
+{
+    if (!value) {
+        return true;
+    }
+    if (!value.is<T>()) {
+        slog::error("'", name, "' must be a ", typeName);
+        return false;
+    }
+    dest = value.as<T>();
+    return true;
+}
+
+bool load(const joml::Node& value, std::string_view name, bool& dest)
+{
+    return loadSingle(value, name, "boolean", dest);
+}
+
+bool load(const joml::Node& value, std::string_view name, int64_t& dest)
+{
+    return loadSingle(value, name, "integer", dest);
+}
+
+bool load(const joml::Node& value, std::string_view name, std::string& dest)
+{
+    return loadSingle(value, name, "string", dest);
+}
+
+template <typename T>
+bool loadParse(const joml::Node& value, std::string_view name, std::string_view typeName, T& dest)
+{
+    std::string str;
+    if (!value) {
+        return true;
+    }
+    if (!load(value, name, str)) {
+        return false;
+    }
+    const auto parsed = T::parse(str);
+    if (!parsed) {
+        slog::error("'", name, "' must be a valid ", typeName);
+        return false;
+    }
+    dest = *parsed;
+    return true;
+}
+
+bool load(const joml::Node& value, std::string_view name, TimePoint& dest)
+{
+    return loadParse(value, name, "time point (HH:MM[:SS])", dest);
+}
+
+bool load(const joml::Node& value, std::string_view name, Duration& dest)
+{
+    return loadParse(value, name, "duration (XXd, XXh, XXm or XXs)", dest);
+}
+
+template <typename T>
+bool load(const joml::Node& value, std::string_view name, std::optional<T>& dest)
+{
+    if (!value) {
+        return true;
+    }
+    return load(value, name, dest.emplace());
+}
+
+template <typename T>
+bool load(const joml::Node& value, std::string_view name, std::vector<T>& dest)
+{
+    if (!value) {
+        return true;
+    }
+    if (!value.isArray()) {
+        slog::error("'", name, "' must be an array");
+        return false;
+    }
+    const auto& arr = value.asArray();
+    dest.clear();
+    for (size_t i = 0; i < arr.size(); ++i) {
+        if (!load(arr[i], std::string(name) + "[" + std::to_string(i) + "]", dest.emplace_back())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+#define CHECK_OR_NULLOPT(cond)                                                                     \
+    if (!(cond)) {                                                                                 \
+        return std::nullopt;                                                                       \
+    }
+
+std::optional<std::string> getEnv(const std::string& name)
+{
+    const auto val = ::getenv(name.c_str());
+    if (!val) {
+        return std::nullopt;
+    }
+    return std::string(val);
+}
+
+fs::path getHomeDirectory()
+{
+    const auto envHome = getEnv("HOME");
+    if (envHome) {
+        return *envHome;
+    }
+    const auto uid = ::geteuid();
+    const auto pw = getpwuid(uid);
+    if (!pw) {
+        slog::error("Could not get user directory");
+        std::exit(1);
+    }
+    return fs::path(pw->pw_dir);
+}
+
+fs::path getXdgDataDirectory()
+{
+    const auto xdgData = getEnv("XDG_DATA_HOME");
+    if (xdgData) {
+        return *xdgData;
+    }
+    return getHomeDirectory() / ".local/share";
+}
+
+fs::path getDataDirectory()
+{
+    return getXdgDataDirectory() / "htcpp";
+}
+
+std::optional<Config::Acme> loadAcme(const std::string& domain, const joml::Node& node)
+{
+    if (!node.isDictionary()) {
+        slog::error("'acme' must be a dictionary");
+        return std::nullopt;
+    }
+
+    Config::Acme acme;
+    acme.domain = domain;
+    bool directoryFound = false;
+    bool accountPrivateKeyPathFound = false;
+    bool certPrivateKeyPathFound = false;
+    bool certPathFound = false;
+    for (const auto& [akey, avalue] : node.asDictionary()) {
+        if (akey == "url") {
+            CHECK_OR_NULLOPT(load(avalue, "url", acme.url));
+        } else if (akey == "alt_names") {
+            CHECK_OR_NULLOPT(load(avalue, "alt_names", acme.altNames));
+        } else if (akey == "directory") {
+            CHECK_OR_NULLOPT(load(avalue, "alt_names", acme.directory));
+            directoryFound = true;
+        } else if (akey == "account_private_key_path") {
+            CHECK_OR_NULLOPT(load(avalue, "alt_names", acme.altNames));
+            accountPrivateKeyPathFound = true;
+        } else if (akey == "cert_private_key_path") {
+            CHECK_OR_NULLOPT(load(avalue, "cert_private_key_path", acme.certPrivateKeyPath));
+            certPrivateKeyPathFound = true;
+        } else if (akey == "cert_path") {
+            CHECK_OR_NULLOPT(load(avalue, "cert_path", acme.certPath));
+            certPathFound = true;
+        } else if (akey == "rsa_key_length") {
+            int64_t length = 0;
+            CHECK_OR_NULLOPT(load(avalue, "rsa_key_length", length));
+            if (length != 1024 && length != 2048 && length != 3072 && length != 4096) {
+                // First three are valid FIPS options, 4096 is something people use as well.
+                slog::error("RSA key length must be in {1024, 2048, 3072, 4096}");
+                return std::nullopt;
+            }
+            acme.rsaKeyLength = static_cast<uint32_t>(length);
+        } else if (akey == "renew_check_times") {
+            CHECK_OR_NULLOPT(load(avalue, "renew_check_times", acme.renewCheckTimes));
+        } else if (akey == "renew_check_jitter") {
+            CHECK_OR_NULLOPT(load(avalue, "renew_check_jitter", acme.renewCheckJitter));
+        } else if (akey == "renew_before_expiry") {
+            CHECK_OR_NULLOPT(load(avalue, "renew_before_expiry", acme.renewBeforeExpiry));
+        } else {
+            slog::error("Invalid key '", akey, "'");
+            return std::nullopt;
+        }
+    }
+
+    if (acme.url == "letsencrypt") {
+        acme.url = "https://acme-v02.api.letsencrypt.org/directory";
+    } else if (acme.url == "letsencrypt-staging") {
+        acme.url = "https://acme-staging-v02.api.letsencrypt.org/directory";
+    }
+
+    // Don't set the defaults before the loop, but only if we have to, because getHomeDirectory
+    // might fail and we don't want it to fail, when we don't even use the result.
+    if (!directoryFound) {
+        acme.directory = getDataDirectory() / "acme";
+    }
+    if (!accountPrivateKeyPathFound) {
+        acme.accountPrivateKeyPath = fs::path(acme.directory) / "accountkey.pem";
+    }
+    if (!certPrivateKeyPathFound) {
+        acme.certPrivateKeyPath = fs::path(acme.directory) / domain / "privkey.pem";
+    }
+    if (!certPathFound) {
+        acme.certPath = fs::path(acme.directory) / domain / "fullchain.pem";
+    }
+
+    return acme;
+}
+
+template <typename Entry>
+bool loadPatternRules(const joml::Node& node, std::string_view name, std::vector<Entry>& entries)
+{
+    if (!node.isDictionary()) {
+        slog::error("'", name, "' must be a dictionary");
+        return false;
+    }
+
+    for (const auto& [key, value] : node.asDictionary()) {
+        auto pattern = Pattern::create(key);
+        if (!pattern) {
+            slog::error("Invalid pattern '", key, "'");
+            return false;
+        }
+
+        if (!value.isString()) {
+            slog::error("Value for pattern '", key, "' must be a string");
+            return false;
+        }
+
+        const auto path = value.asString();
+        if (!pattern->isValidReplacementString(path)) {
+            slog::error("'", path, "' is not a valid replacement string");
+            return false;
+        }
+
+        entries.push_back(Entry { *pattern, path });
+    }
+    return true;
+}
+
 std::optional<std::unordered_map<std::string, Config::Service::Host>> loadHosts(
     const joml::Node& node)
 {
-    if (!node.is<joml::Node::Dictionary>()) {
+    if (!node.isDictionary()) {
         slog::error("'hosts' must be a dictionary");
         return std::nullopt;
     }
 
     std::unordered_map<std::string, Config::Service::Host> hosts;
-    for (const auto& [hostName, jhost] : node.as<joml::Node::Dictionary>()) {
+    for (const auto& [hostName, jhost] : node.asDictionary()) {
         auto& host = hosts.emplace(hostName, Config::Service::Host {}).first->second;
 
-        if (!jhost.is<joml::Node::Dictionary>()) {
+        if (!jhost.isDictionary()) {
             slog::error("host (element of 'hosts') must be a dictionary");
             return std::nullopt;
         }
 
-        for (const auto& [hkey, hvalue] : jhost.as<joml::Node::Dictionary>()) {
+        for (const auto& [hkey, hvalue] : jhost.asDictionary()) {
             if (hkey == "files") {
-                if (hvalue.is<joml::Node::String>()) {
-                    host.files.emplace_back(Config::Service::Host::FilesEntry {
-                        Pattern::create("/").value(), hvalue.as<joml::Node::String>() });
-                } else if (hvalue.is<joml::Node::Dictionary>()) {
-                    for (const auto& [urlPath, fsPath] : hvalue.as<joml::Node::Dictionary>()) {
-                        auto pattern = Pattern::create(urlPath);
-                        if (!pattern) {
-                            return std::nullopt;
-                        }
-
-                        if (!fsPath.is<joml::Node::String>()) {
-                            slog::error("'files' values must be a string");
-                            return std::nullopt;
-                        }
-
-                        const auto path = fsPath.as<joml::Node::String>();
-                        if (!pattern->isValidReplacementString(path)) {
-                            slog::error("'", path, "' is an invalid replacement string");
-                            return std::nullopt;
-                        }
-
-                        host.files.emplace_back(
-                            Config::Service::Host::FilesEntry { *pattern, path });
+                if (hvalue.isString()) {
+                    host.files.emplace_back(Config::Service::Host::PatternEntry {
+                        Pattern::create("/").value(), hvalue.asString() });
+                } else if (hvalue.isDictionary()) {
+                    if (!loadPatternRules(hvalue, "files", host.files)) {
+                        return std::nullopt;
                     }
                 } else {
                     slog::error("'files' must be a string or a dictionary");
                     return std::nullopt;
                 }
             } else if (hkey == "metrics") {
-                if (!hvalue.is<joml::Node::String>()) {
+                if (!hvalue.isString()) {
                     slog::error("'metrics' must be a string");
                     return std::nullopt;
                 }
-                host.metrics = hvalue.as<joml::Node::String>();
+                host.metrics = hvalue.asString();
             } else if (hkey == "headers") {
-                if (!hvalue.is<joml::Node::Dictionary>()) {
+                if (!hvalue.isDictionary()) {
                     slog::error("headers (element of host) must be a dictionary");
                     return std::nullopt;
                 }
 
-                for (const auto& [patternStr, hdsvalue] : hvalue.as<joml::Node::Dictionary>()) {
-                    if (!hdsvalue.is<joml::Node::Dictionary>()) {
+                for (const auto& [patternStr, hdsvalue] : hvalue.asDictionary()) {
+                    if (!hdsvalue.isDictionary()) {
                         slog::error("value of headers dictionary must be a dictionary too");
                         return std::nullopt;
                     }
@@ -123,28 +350,36 @@ std::optional<std::unordered_map<std::string, Config::Service::Host>> loadHosts(
                     }
 
                     std::unordered_map<std::string, std::string> headers;
-                    for (const auto& [headerName, headerValue] :
-                        hdsvalue.as<joml::Node::Dictionary>()) {
-                        if (!headerValue.is<joml::Node::String>()) {
+                    for (const auto& [headerName, headerValue] : hdsvalue.asDictionary()) {
+                        if (!headerValue.isString()) {
                             slog::error(
                                 "HTTP Header value for '", headerName, "' must be a string");
                             return std::nullopt;
                         }
-                        headers.emplace(headerName, headerValue.as<joml::Node::String>());
+                        headers.emplace(headerName, headerValue.asString());
                     }
 
                     host.headers.push_back(Config::Service::Host::HeadersEntry {
                         std::move(*pattern), std::move(headers) });
                 }
+            } else if (hkey == "redirects") {
+                if (!loadPatternRules(hvalue, "redirects", host.redirects)) {
+                    return std::nullopt;
+                }
+#ifdef TLS_SUPPORT_ENABLED
+            } else if (hkey == "acme_challenges") {
+                CHECK_OR_NULLOPT(load(hvalue, "acme_challenges", host.acmeChallenges));
+#endif
             } else {
                 slog::error("Invalid key '", hkey, "'");
                 return std::nullopt;
             }
         }
 
-        if (host.files.empty() && !host.metrics) {
-            slog::error(
-                "Must specify at least one of 'files' or 'metrics' for host ('", hostName, "')");
+        if (host.files.empty() && !host.metrics && host.redirects.empty() && !host.acmeChallenges) {
+            slog::error("Must specify at least one of 'acme-challenges', 'files', 'metrics' or "
+                        "'redirects' for host ('",
+                hostName, "')");
             return std::nullopt;
         }
     }
@@ -153,12 +388,12 @@ std::optional<std::unordered_map<std::string, Config::Service::Host>> loadHosts(
 
 std::optional<std::vector<Config::Service>> loadServices(const joml::Node& node)
 {
-    if (!node.is<joml::Node::Dictionary>()) {
+    if (!node.isDictionary()) {
         slog::error("'services' must be a dictionary");
         return std::nullopt;
     }
     std::vector<Config::Service> services;
-    for (const auto& [addr, jservice] : node.as<joml::Node::Dictionary>()) {
+    for (const auto& [addr, jservice] : node.asDictionary()) {
         auto& service = services.emplace_back();
 
         auto ipPort = IpPort::parse(addr);
@@ -171,48 +406,40 @@ std::optional<std::vector<Config::Service>> loadServices(const joml::Node& node)
         }
         service.listenPort = ipPort->port;
 
-        if (!jservice.is<joml::Node::Dictionary>()) {
+        if (!jservice.isDictionary()) {
             slog::error("service (element of 'services') must be a dictionary");
             return std::nullopt;
         }
 
-        for (const auto& [skey, svalue] : jservice.as<joml::Node::Dictionary>()) {
+        for (const auto& [skey, svalue] : jservice.asDictionary()) {
             if (skey == "access_log") {
-                if (!svalue.is<joml::Node::Bool>()) {
+                if (!svalue.isBool()) {
                     slog::error("'access_log' must be a boolean");
                     return std::nullopt;
                 }
-                service.accesLog = svalue.as<joml::Node::Bool>();
+                service.accesLog = svalue.asBool();
             } else if (skey == "tls") {
-                if (!svalue.is<joml::Node::Dictionary>()) {
+                if (!svalue.isDictionary()) {
                     slog::error("'tls' must be a dictionary");
                     return std::nullopt;
                 }
                 service.tls.emplace();
-                bool chainFound = false;
-                bool keyFound = false;
-                for (const auto& [tkey, tvalue] : svalue.as<joml::Node::Dictionary>()) {
+                for (const auto& [tkey, tvalue] : svalue.asDictionary()) {
                     if (tkey == "chain") {
-                        if (!tvalue.is<joml::Node::String>()) {
-                            slog::error("'chain' must be a string");
-                            return std::nullopt;
-                        }
-                        service.tls->chain = tvalue.as<joml::Node::String>();
-                        chainFound = true;
+                        CHECK_OR_NULLOPT(load(tvalue, "chain", service.tls->chain));
                     } else if (tkey == "key") {
-                        if (!tvalue.is<joml::Node::String>()) {
-                            slog::error("'key' must be a string");
-                            return std::nullopt;
-                        }
-                        service.tls->key = tvalue.as<joml::Node::String>();
-                        keyFound = true;
+                        CHECK_OR_NULLOPT(load(tvalue, "key", service.tls->key));
+                    } else if (tkey == "acme") {
+                        CHECK_OR_NULLOPT(load(tvalue, "acme", service.tls->acme));
                     } else {
                         slog::error("Invalid key '", tkey, "'");
                         return std::nullopt;
                     }
                 }
-                if (!chainFound || !keyFound) {
-                    slog::error("'chain' and 'key' are mandatory in 'tls'");
+                const auto enough = service.tls->acme || (service.tls->chain && service.tls->key);
+                const auto tooMuch = service.tls->acme && (service.tls->chain || service.tls->key);
+                if (!enough || tooMuch) {
+                    slog::error("Define either both 'chain' and 'key' or only 'acme' in 'tls'");
                     return std::nullopt;
                 }
             } else if (skey == "hosts") {
@@ -268,24 +495,20 @@ bool Config::loadFromFile(const std::string& path)
     bool servicesFound = false;
 
     for (const auto& [key, value] : *joml) {
-
         if (key == "io_queue_size") {
-            if (!value.is<joml::Node::Integer>()) {
-                slog::error("'io_queue_size' must be an integer");
+            int64_t qs = 0;
+            if (!load(value, "io_queue_size", qs)) {
                 return false;
             }
-            const auto qs = value.as<joml::Node::Integer>();
             if (qs < 1 || qs > 4096 || !isPowerOfTwo(qs)) {
                 slog::error("'io_queue_size' must be power of two in [1, 4096]");
                 return false;
             }
             copy.ioQueueSize = static_cast<size_t>(qs);
         } else if (key == "io_submission_queue_polling") {
-            if (!value.is<joml::Node::Bool>()) {
-                slog::error("'io_submission_queue_polling' must be a boolean");
+            if (!load(value, "io_submission_queue_polling", copy.ioSubmissionQueuePolling)) {
                 return false;
             }
-            copy.ioSubmissionQueuePolling = value.as<joml::Node::Bool>();
         } else if (key == "services") {
             const auto services = loadServices(value);
             if (!services) {
@@ -293,11 +516,39 @@ bool Config::loadFromFile(const std::string& path)
             }
             copy.services = *services;
             servicesFound = true;
+#ifdef TLS_SUPPORT_ENABLED
+        } else if (key == "acme") {
+            if (!value.isDictionary()) {
+                slog::error("'acme' must be a dictionary");
+                return false;
+            }
+            for (const auto& [akey, avalue] : value.asDictionary()) {
+                if (copy.acme.count(akey)) {
+                    slog::error("Duplicate key '", akey,
+                        "' in 'acme'. Only one acme instance per domain allowed.");
+                    return false;
+                }
+                auto acme = loadAcme(akey, avalue);
+                if (!acme) {
+                    return false;
+                }
+                copy.acme.emplace(akey, std::move(*acme));
+            }
+#endif
         } else {
             slog::error("Invalid key '", key, '"');
             return false;
         }
     }
+
+#ifdef TLS_SUPPORT_ENABLED
+    for (const auto& service : copy.services) {
+        if (service.tls && service.tls->acme && copy.acme.count(*service.tls->acme) == 0) {
+            slog::error("Invalid reference to acme object '", *service.tls->acme, "'");
+            return false;
+        }
+    }
+#endif
 
     if (!servicesFound) {
         slog::error("'services' is mandatory and must not be empty");

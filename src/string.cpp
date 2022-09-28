@@ -104,3 +104,12 @@ std::string pathJoin(std::string_view a, std::string_view b)
     ret.append(b);
     return ret;
 }
+
+std::string rjust(std::string_view str, size_t length, char ch)
+{
+    if (str.size() >= length) {
+        return std::string(str);
+    }
+    const auto n = length - str.size();
+    return std::string(n, ch) + std::string(str);
+}

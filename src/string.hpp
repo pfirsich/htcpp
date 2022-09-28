@@ -36,3 +36,20 @@ std::optional<T> parseInt(std::string_view str, int base = 10)
 }
 
 std::string pathJoin(std::string_view a, std::string_view b);
+
+template <typename Container>
+std::string join(const Container& container, std::string_view delim = ", ")
+{
+    std::string ret;
+    bool first = true;
+    for (const auto& elem : container) {
+        if (!first) {
+            ret.append(delim);
+        }
+        first = false;
+        ret.append(elem);
+    }
+    return ret;
+}
+
+std::string rjust(std::string_view str, size_t length, char ch);

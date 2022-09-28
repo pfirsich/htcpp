@@ -73,10 +73,7 @@ private:
         {
         }
 
-        void respond(Response&& response) override
-        {
-            session->respond(std::move(response));
-        }
+        void respond(Response&& response) override { session->respond(std::move(response)); }
     };
 
     // A Session will have ownership of itself and decide on its own when it's time to be
@@ -393,8 +390,13 @@ private:
             static auto& connAccepted = Metrics::get().connAccepted.labels();
             connAccepted.inc();
             const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
-            std::make_shared<Session>(connectionFactory_.create(io_, fd), handler_, addr, config_)
-                ->start();
+            auto conn = connectionFactory_.create(io_, fd);
+            if (conn) {
+                std::make_shared<Session>(std::move(conn), handler_, addr, config_)->start();
+            } else {
+                slog::info("Could not create connection object (connection factory not ready)");
+                io_.close(fd, [](std::error_code) {});
+            }
         }
 
         accept();

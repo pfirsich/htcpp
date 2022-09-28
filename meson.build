@@ -7,6 +7,7 @@ clipp_dep = dependency('clipp', fallback : ['clipp', 'clipp_dep'])
 cpprom_dep = dependency('cpprom', fallback : ['cpprom', 'cpprom_dep'], default_options : [ 'single_threaded=true' ])
 joml_cpp_dep = dependency('joml-cpp', fallback : ['joml-cpp', 'joml_cpp_dep'])
 liburingpp_dep = dependency('liburingpp', fallback : ['liburingpp', 'liburingpp_dep'])
+minijson_dep = dependency('minijson', fallback : ['minijson', 'minijson_dep'])
 
 flags = []
 
@@ -25,11 +26,15 @@ lib_src = [
   'src/server.cpp',
   'src/string.cpp',
   'src/tcp.cpp',
+  'src/time.cpp',
   'src/util.cpp',
 ]
 
 if openssl_dep.found()
-  lib_src += 'src/ssl.cpp'
+  lib_src += [
+    'src/acme.cpp',
+    'src/ssl.cpp',
+  ]
   flags += '-DTLS_SUPPORT_ENABLED'
 endif
 
@@ -38,6 +43,7 @@ htcpp_lib_deps = [
   openssl_dep,
   cpprom_dep,
   liburingpp_dep,
+  minijson_dep,
 ]
 
 # This is not really clean, but it's a start

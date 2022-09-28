@@ -88,6 +88,11 @@ int main(int argc, char** argv)
 
 #ifdef TLS_SUPPORT_ENABLED
     std::vector<std::unique_ptr<Server<SslServerConnectionFactory>>> sslServers;
+    std::vector<std::unique_ptr<Server<AcmeSslConnectionFactory>>> acmeSslServers;
+
+    for (const auto& [name, config] : config.acme) {
+        registerAcmeClient(name, io, config);
+    }
 #endif
 
     for (const auto& service : config.services) {
@@ -95,40 +100,53 @@ int main(int argc, char** argv)
 
 #ifdef TLS_SUPPORT_ENABLED
         if (service.tls) {
-            auto factory = SslServerConnectionFactory(io, service.tls->chain, service.tls->key);
-            if (!factory.contextManager->getCurrentContext()) {
-                return 1;
-            }
+            if (service.tls->acme) {
+                auto factory = AcmeSslConnectionFactory { getAcmeClient(*service.tls->acme) };
+                auto server = std::make_unique<Server<AcmeSslConnectionFactory>>(
+                    io, std::move(factory), std::move(handler), service);
+                server->start();
+                acmeSslServers.push_back(std::move(server));
+            } else {
+                assert(service.tls->chain && service.tls->key);
+                auto factory
+                    = SslServerConnectionFactory(io, *service.tls->chain, *service.tls->key);
+                if (!factory.contextManager->getCurrentContext()) {
+                    return 1;
+                }
 
-            auto server = std::make_unique<Server<SslServerConnectionFactory>>(
-                io, std::move(factory), handler, service);
-            server->start();
-            sslServers.push_back(std::move(server));
+                auto server = std::make_unique<Server<SslServerConnectionFactory>>(
+                    io, std::move(factory), std::move(handler), service);
+                server->start();
+                sslServers.push_back(std::move(server));
+            }
         } else {
             auto server = std::make_unique<Server<TcpConnectionFactory>>(
-                io, TcpConnectionFactory {}, handler, service);
+                io, TcpConnectionFactory {}, std::move(handler), service);
             server->start();
             tcpServers.push_back(std::move(server));
         }
 #else
         auto server = std::make_unique<Server<TcpConnectionFactory>>(
-            io, TcpConnectionFactory {}, handler, service);
+            io, TcpConnectionFactory {}, std::move(handler), service);
         server->start();
         tcpServers.push_back(std::move(server));
 #endif
 
         for (const auto& [name, host] : service.hosts) {
-            std::string hosting;
-            if (host.files.size() > 0) {
-                hosting.append("files");
+            std::vector<std::string> hosting;
+            if (host.files.size()) {
+                hosting.push_back("files");
             }
             if (host.metrics) {
-                if (host.files.size() > 0) {
-                    hosting.append(", ");
-                }
-                hosting.append("metrics");
+                hosting.push_back("metrics");
             }
-            slog::info("Host '", name, "': ", hosting);
+            if (host.acmeChallenges) {
+                hosting.push_back("acme-challenges");
+            }
+            if (host.redirects.size()) {
+                hosting.push_back("redirects");
+            }
+            slog::info("Host '", name, "': ", join(hosting));
         }
     }
     io.run();

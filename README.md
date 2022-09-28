@@ -9,6 +9,7 @@ Currently it has the following features:
 * Persistent Connections (it doesn't support pipelining though, because no one does)
 * Caches files and watches them using inotify to reload them automatically if they change on disk
 * TLS with automatic reloading of certificate chain or private key if they change on disk
+* A built-in ACME client and semi-automatic (some configuration required) HTTPS via [Let's Encrypt](https://letsencrypt.org), like [Caddy](https://caddyserver.com)
 * Built-in [Prometheus](https://prometheus.io/)-compatible metrics using [cpprom](https://github.com/pfirsich/cpprom/)
 * The only dependency that is not another project of mine is OpenSSL (of course exclusing the Linux Kernel, glibc and the standard library).
 * [JOML](https://github.com/pfirsich/joml) configuration files ([examples](./configs))
@@ -46,8 +47,8 @@ docker run --init --network=host htcpp <args>
 The `--init` is necessary for the container to terminate gracefully. You can replace `--network=host` with an explicit port forwarding, but host networking gives better performance.
 
 ## To Do (Must)
+* Get rid of deprecated RSA_ functions in ACME client
 * Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
-* Make it work with certbot: Now that I have reloading of certificates and I can configure multiple sites (to host `.well-known/acme-challenge` on port 80), I think I have everything that I need.
 
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
@@ -62,6 +63,7 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 * Directory Listings
 * Optionally use MD5/SHA1 for ETag
 * Add some tests 😬 (maybe have a Python script run the server with certain configs and test responses)
+* Test with certbot: Now that I have reloading of certificates and I can configure multiple sites (to host `.well-known/acme-challenge` on port 80), I think I have everything that I need.
 
 ## To Do (Could)
 * Large file transfer (with `sendfile` or `slice`)

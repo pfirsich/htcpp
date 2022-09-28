@@ -96,6 +96,12 @@ HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
         }
         hosts_.back().metrics = host.metrics;
         hosts_.back().headers = host.headers;
+        hosts_.back().redirects = host.redirects;
+#ifdef TLS_SUPPORT_ENABLED
+        if (host.acmeChallenges) {
+            hosts_.back().acmeChallenges.push_back(getAcmeClient(*host.acmeChallenges));
+        }
+#endif
     }
 }
 
@@ -131,19 +137,31 @@ void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> 
         return;
     }
 
-    if (host->metrics && request.url.path == *host->metrics) {
-        metrics(*host, request, std::move(responder));
+    if (metrics(*host, request, responder)) {
+        return;
+#ifdef TLS_SUPPORT_ENABLED
+    } else if (acmeChallenges(*host, request, responder)) {
+        return;
+#endif
+    } else if (redirects(*host, request, responder)) {
+        return;
+    } else if (files(*host, request, responder)) {
+        return;
     } else {
-        files(*host, request, std::move(responder));
+        return responder->respond(Response(StatusCode::NotFound, "Not Found"));
     }
 }
 
-void HostHandler::metrics(const HostHandler::Host& host, const Request& request,
+bool HostHandler::metrics(const HostHandler::Host& host, const Request& request,
     std::shared_ptr<Responder> responder) const
 {
+    if (!host.metrics || request.url.path != *host.metrics) {
+        return false;
+    }
+
     if (request.method != Method::Get) {
         responder->respond(Response(StatusCode::MethodNotAllowed));
-        return;
+        return true;
     }
 
     io_.async<Response>(
@@ -157,9 +175,47 @@ void HostHandler::metrics(const HostHandler::Host& host, const Request& request,
             host.addHeaders(requestPath, response);
             responder->respond(std::move(response));
         });
+
+    return true;
 }
 
-void HostHandler::files(const HostHandler::Host& host, const Request& request,
+#ifdef TLS_SUPPORT_ENABLED
+bool HostHandler::acmeChallenges(
+    const Host& host, const Request& request, std::shared_ptr<Responder> responder) const
+{
+    for (const auto& client : host.acmeChallenges) {
+        const auto challenges = client->getChallenges();
+        for (const auto& challenge : *challenges) {
+            if (challenge.path == request.url.path) {
+                // The example in RFC8555 also uses application/octet-stream:
+                // https://www.rfc-editor.org/rfc/rfc8555#section-8.3
+                responder->respond(
+                    Response(StatusCode::Ok, challenge.content, "application/octet-stream"));
+                return true;
+            }
+        }
+    }
+    return false;
+}
+#endif
+
+bool HostHandler::redirects(const HostHandler::Host& host, const Request& request,
+    std::shared_ptr<Responder> responder) const
+{
+    for (const auto& entry : host.redirects) {
+        const auto res = entry.pattern.match(request.url.path);
+        if (res.match) {
+            const auto target = Pattern::replaceGroupReferences(entry.replacement, res.groups);
+            auto resp = Response(StatusCode::MovedPermanently);
+            resp.headers.add("Location", target);
+            responder->respond(std::move(resp));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HostHandler::files(const HostHandler::Host& host, const Request& request,
     std::shared_ptr<Responder> responder) const
 {
     for (const auto& entry : host.files) {
@@ -171,10 +227,10 @@ void HostHandler::files(const HostHandler::Host& host, const Request& request,
             } else {
                 respondFile(host, entry.fsPath, request, std::move(responder));
             }
-            return;
+            return true;
         }
     }
-    responder->respond(Response(StatusCode::NotFound, "Not Found"));
+    return false;
 }
 
 void HostHandler::respondFile(const HostHandler::Host& host, const std::string& path,
