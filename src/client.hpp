@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstring>
+#include <future>
 
 #include <netdb.h>
 #include <netinet/in.h>
@@ -9,6 +10,7 @@
 
 #include "http.hpp"
 #include "ioqueue.hpp"
+#include "result.hpp"
 #include "tcp.hpp"
 #include "util.hpp"
 
@@ -307,3 +309,29 @@ private:
 // This must be called from the main thread! You can tell by the IoQueue& parameter
 void request(IoQueue& io, Method method, const std::string_view urlStr, const HeaderMap<>& headers,
     const std::string& requestBody, std::function<void(std::error_code, Response&&)> cb);
+
+class ThreadRequester {
+public:
+    using RequestResult = Result<Response>;
+
+    // This must be constructed from the main thread
+    ThreadRequester(IoQueue& io);
+
+    // This can be called from any thread
+    std::future<RequestResult> request(
+        Method method, std::string url, HeaderMap<> headers = {}, std::string body = {});
+
+private:
+    struct Event {
+        std::shared_ptr<std::promise<RequestResult>> promise;
+        Method method;
+        std::string url;
+        HeaderMap<> headers;
+        std::string body;
+    };
+
+    void eventHandler(Event&& event);
+
+    IoQueue& io_;
+    EventListener<Event> eventListener_;
+};

@@ -24,3 +24,30 @@ void request(IoQueue& io, Method method, const std::string_view urlStr, const He
     }
 }
 
+ThreadRequester::ThreadRequester(IoQueue& io)
+    : io_(io)
+    , eventListener_(io, [this](Event&& event) { eventHandler(std::move(event)); })
+{
+}
+
+std::future<ThreadRequester::RequestResult> ThreadRequester::request(
+    Method method, std::string url, HeaderMap<> headers, std::string body)
+{
+    auto prom = std::make_shared<std::promise<RequestResult>>();
+    auto fut = prom->get_future();
+    eventListener_.emit(
+        Event { std::move(prom), method, std::move(url), std::move(headers), std::move(body) });
+    return fut;
+}
+
+void ThreadRequester::eventHandler(ThreadRequester::Event&& event)
+{
+    ::request(io_, event.method, event.url, event.headers, event.body,
+        [prom = std::move(event.promise)](std::error_code ec, Response&& resp) mutable {
+            if (ec) {
+                prom->set_value(Result<Response>(error(ec)));
+            } else {
+                prom->set_value(Result<Response>(std::move(resp)));
+            }
+        });
+}
