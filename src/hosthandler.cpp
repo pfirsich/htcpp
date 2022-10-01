@@ -187,6 +187,10 @@ bool HostHandler::acmeChallenges(
         const auto challenges = client->getChallenges();
         for (const auto& challenge : *challenges) {
             if (challenge.path == request.url.path) {
+                if (request.method != Method::Get) {
+                    responder->respond(Response(StatusCode::MethodNotAllowed));
+                    return true;
+                }
                 // The example in RFC8555 also uses application/octet-stream:
                 // https://www.rfc-editor.org/rfc/rfc8555#section-8.3
                 responder->respond(
@@ -199,15 +203,37 @@ bool HostHandler::acmeChallenges(
 }
 #endif
 
+constexpr std::string_view redirectBody = R"(<html>
+    <head>
+        <meta charset="utf-8">
+        <title>301 Moved</title>
+    </head>
+    <body>
+        <h1>301 Moved</h1>
+        The document has moved <a href="http://www.google.de/">here</a>.
+    </body>
+</html>)";
+
 bool HostHandler::redirects(const HostHandler::Host& host, const Request& request,
     std::shared_ptr<Responder> responder) const
 {
+
     for (const auto& entry : host.redirects) {
         const auto res = entry.pattern.match(request.url.path);
         if (res.match) {
             const auto target = Pattern::replaceGroupReferences(entry.replacement, res.groups);
             auto resp = Response(StatusCode::MovedPermanently);
             resp.headers.add("Location", target);
+            if (request.method == Method::Get) {
+                // RFC2616 says the response body SHOULD contain a note with a hyperlink to the new
+                // URL, but if I don't add it, both curl and Firefox stall on the response forever
+                // and never actually follow the redirect.
+                resp.body = redirectBody;
+                resp.headers.add("Content-Type", "text/html");
+            } else if (request.method != Method::Head) {
+                responder->respond(Response(StatusCode::MethodNotAllowed));
+                return true;
+            }
             responder->respond(std::move(resp));
             return true;
         }
