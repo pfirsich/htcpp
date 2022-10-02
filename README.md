@@ -49,7 +49,7 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 If you wish to use the ACME client, make sure to install root certificates in your image to allow HTTPS requests to the ACME directory (e.g. Let's Encrypt). On Ubuntu for example the corresponding package is called `ca-certificates`.
 
 ## To Do (Must)
-* Get rid of deprecated RSA_ functions in ACME client
+* Nothing right now!
 
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
