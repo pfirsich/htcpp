@@ -151,8 +151,8 @@ void IoQueue::run()
             auto ch = std::move(completionHandlers_[cqe->user_data]);
             ch(cqe);
             completionHandlers_.remove(cqe->user_data);
-            ring_.advanceCq();
         }
+        ring_.advanceCq();
     }
 }
 
@@ -202,6 +202,8 @@ bool IoQueue::addSqe(io_uring_sqe* sqe, Timespec* timeout, bool timeoutIsAbsolut
     }
     sqe->user_data = addHandler(std::move(cb));
     sqe->flags |= IOSQE_IO_LINK;
+    // If the timeout does not fit into the SQ, that's fine. We don't want to undo the whole thing.
+    // In the future the use of timeouts might be more critical and this should be reconsidered.
     auto timeoutSqe = ring_.prepareLinkTimeout(timeout, timeoutIsAbsolute ? IORING_TIMEOUT_ABS : 0);
     timeoutSqe->user_data = Ignore;
     return true;
