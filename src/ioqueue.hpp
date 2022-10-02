@@ -46,6 +46,10 @@ public:
     // res argument is sent bytes
     bool send(int sockfd, const void* buf, size_t len, HandlerEcRes cb);
 
+    // timeout may be nullptr for convenience (which is equivalent to the function above)
+    bool send(int sockfd, const void* buf, size_t len, Timespec* timeout, bool timeoutIsAbsolute,
+        HandlerEcRes cb);
+
     // res argument is received bytes
     bool recv(int sockfd, void* buf, size_t len, HandlerEcRes cb);
 

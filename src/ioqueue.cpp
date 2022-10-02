@@ -68,6 +68,15 @@ bool IoQueue::send(int sockfd, const void* buf, size_t len, HandlerEcRes cb)
     return addSqe(ring_.prepareSend(sockfd, buf, len), std::move(cb));
 }
 
+bool IoQueue::send(int sockfd, const void* buf, size_t len, IoQueue::Timespec* timeout,
+    bool timeoutIsAbsolute, HandlerEcRes cb)
+{
+    if (!timeout) {
+        return send(sockfd, buf, len, std::move(cb));
+    }
+    return addSqe(ring_.prepareSend(sockfd, buf, len), timeout, timeoutIsAbsolute, std::move(cb));
+}
+
 bool IoQueue::recv(int sockfd, void* buf, size_t len, HandlerEcRes cb)
 {
     return addSqe(ring_.prepareRecv(sockfd, buf, len), std::move(cb));
@@ -76,6 +85,9 @@ bool IoQueue::recv(int sockfd, void* buf, size_t len, HandlerEcRes cb)
 bool IoQueue::recv(int sockfd, void* buf, size_t len, IoQueue::Timespec* timeout,
     bool timeoutIsAbsolute, HandlerEcRes cb)
 {
+    if (!timeout) {
+        return recv(sockfd, buf, len, std::move(cb));
+    }
     return addSqe(ring_.prepareRecv(sockfd, buf, len), timeout, timeoutIsAbsolute, std::move(cb));
 }
 
