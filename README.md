@@ -50,7 +50,6 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 
 ## To Do (Must)
 * Get rid of deprecated RSA_ functions in ACME client
-* Add request read timeout (to be less susceptible to trickle attacks). I have not done this yet, because it's tricky with SSL right now. Note: Be aware of connection reuse, i.e. idle connections should time out, overly long requests should time out, single reads should also time out.
 
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)

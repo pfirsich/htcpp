@@ -320,19 +320,35 @@ bool SslConnection::setHostname(const std::string& hostname)
 
 void SslConnection::recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
-    startSslOperation(SslOperation::Read, buffer, len, std::move(handler));
+    startSslOperation(SslOperation::Read, buffer, len, nullptr, std::move(handler));
+}
+
+void SslConnection::recv(
+    void* buffer, size_t len, IoQueue::Timespec* timeout, IoQueue::HandlerEcRes handler)
+{
+    startSslOperation(SslOperation::Read, buffer, len, timeout, std::move(handler));
 }
 
 void SslConnection::send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler)
 {
     // This const_cast is okay, because before this buffer is accessed, it's const_cast back to
     // `const void*` again.
-    startSslOperation(SslOperation::Write, const_cast<void*>(buffer), len, std::move(handler));
+    startSslOperation(
+        SslOperation::Write, const_cast<void*>(buffer), len, nullptr, std::move(handler));
+}
+
+void SslConnection::send(
+    const void* buffer, size_t len, IoQueue::Timespec* timeout, IoQueue::HandlerEcRes handler)
+{
+    // This const_cast is okay, because before this buffer is accessed, it's const_cast back to
+    // `const void*` again.
+    startSslOperation(
+        SslOperation::Write, const_cast<void*>(buffer), len, timeout, std::move(handler));
 }
 
 void SslConnection::shutdown(IoQueue::HandlerEc handler)
 {
-    startSslOperation(SslOperation::Shutdown, nullptr, 0,
+    startSslOperation(SslOperation::Shutdown, nullptr, 0, nullptr,
         [handler = std::move(handler)](std::error_code ec, int) { handler(ec); });
 }
 
@@ -378,10 +394,10 @@ void SslConnection::performSslOperation()
     processSslOperationResult(res);
 }
 
-void SslConnection::startSslOperation(
-    SslOperation op, void* buffer, int length, IoQueue::HandlerEcRes handler)
+void SslConnection::startSslOperation(SslOperation op, void* buffer, int length,
+    IoQueue::Timespec* timeout, IoQueue::HandlerEcRes handler)
 {
-    state_ = SslOperationState { std::move(handler), op, buffer, length };
+    state_ = SslOperationState { std::move(handler), op, buffer, length, timeout };
     performSslOperation();
 }
 
@@ -408,7 +424,7 @@ void SslConnection::completeSslOperation(std::error_code ec, int result)
 
 void SslConnection::sendFromBuffer(size_t offset, size_t size)
 {
-    io_.send(fd_, sendBuffer_.data() + offset, size,
+    io_.send(fd_, sendBuffer_.data() + offset, size, state_.timeout, true,
         [this, offset, size](std::error_code ec, int sentBytes) {
             if (ec) {
                 slog::debug("Error in send (SSL): ", ec.message());
@@ -459,8 +475,8 @@ void SslConnection::processSslOperationResult(const SslOperationResult& result)
 
         sendFromBuffer(0, readFromBio);
     } else if (result.error == SSL_ERROR_WANT_READ) {
-        io_.recv(
-            fd_, recvBuffer_.data(), recvBuffer_.size(), [this](std::error_code ec, int readBytes) {
+        io_.recv(fd_, recvBuffer_.data(), recvBuffer_.size(), state_.timeout, true,
+            [this](std::error_code ec, int readBytes) {
                 if (ec) {
                     slog::debug("Error in recv (SSL): ", ec.message());
                     // See branch for SSL_ERROR_WANT_WRITE

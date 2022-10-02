@@ -107,7 +107,10 @@ public:
     // If a handler of any of these three functions comes back with an error,
     // don't do any other IO on the socket and do not call shutdown (just close it).
     void recv(void* buffer, size_t len, IoQueue::HandlerEcRes handler);
+    void recv(void* buffer, size_t len, IoQueue::Timespec* timeout, IoQueue::HandlerEcRes handler);
     void send(const void* buffer, size_t len, IoQueue::HandlerEcRes handler);
+    void send(
+        const void* buffer, size_t len, IoQueue::Timespec* timeout, IoQueue::HandlerEcRes handler);
     void shutdown(IoQueue::HandlerEc handler);
 
 private:
@@ -122,6 +125,7 @@ private:
         SslOperation currentOp = SslOperation::Invalid;
         void* buffer = nullptr;
         int length = 0;
+        IoQueue::Timespec* timeout = nullptr;
         int lastResult = 0;
         int lastError = 0;
     };
@@ -131,8 +135,8 @@ private:
 
     void sendFromBuffer(size_t offset, size_t size);
 
-    void startSslOperation(
-        SslOperation op, void* buffer, int length, IoQueue::HandlerEcRes handler);
+    void startSslOperation(SslOperation op, void* buffer, int length, IoQueue::Timespec* timeout,
+        IoQueue::HandlerEcRes handler);
     void performSslOperation();
     void processSslOperationResult(const SslOperationResult& result);
     void updateSslOperation();

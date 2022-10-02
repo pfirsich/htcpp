@@ -126,11 +126,11 @@ private:
         {
             requestHeaderBuffer_.clear();
             requestBodyBuffer_.clear();
-            IoQueue::setAbsoluteTimeout(&readTimeout_, serverConfig_.fullReadTimeoutMs);
+            IoQueue::setAbsoluteTimeout(&recvTimeout_, serverConfig_.fullReadTimeoutMs);
 
             const auto recvLen = serverConfig_.maxRequestHeaderSize;
             requestHeaderBuffer_.append(recvLen, '\0');
-            connection_->recv(requestHeaderBuffer_.data(), recvLen,
+            connection_->recv(requestHeaderBuffer_.data(), recvLen, &recvTimeout_,
                 // `this->` before `shared_from_this` is necessary or you get an error
                 // because of a dependent type lookup.
                 [this, self = this->shared_from_this(), recvLen](
@@ -142,7 +142,14 @@ private:
                         // want to close. There might be errors, where shutdown is better, but
                         // especially with SSL almost all errors here require us to NOT shutdown.
                         // Same applies for send below.
-                        connection_->close();
+                        // A notable exception is ECANCELED caused by an expiration of the read
+                        // timeout.
+                        if (ec.value() == ECANCELED) {
+                            connection_->shutdown([this, self = this->shared_from_this()](
+                                                      std::error_code) { connection_->close(); });
+                        } else {
+                            connection_->close();
+                        }
                         return;
                     }
 
@@ -198,7 +205,7 @@ private:
             const auto recvLen = contentLength - sizeBeforeRead;
             requestBodyBuffer_.append(recvLen, '\0');
             auto buffer = requestBodyBuffer_.data() + sizeBeforeRead;
-            connection_->recv(buffer, recvLen,
+            connection_->recv(buffer, recvLen, &recvTimeout_,
                 [this, self = this->shared_from_this(), recvLen, contentLength](
                     std::error_code ec, int readBytes) {
                     if (ec) {
@@ -352,7 +359,7 @@ private:
         std::string responseBuffer_;
         Request request_;
         Response response_;
-        IoQueue::Timespec readTimeout_;
+        IoQueue::Timespec recvTimeout_;
         cpprom::Gauge::TrackInProgressHandle trackInProgressHandle_;
         double requestStart_;
         const Config::Server& serverConfig_;

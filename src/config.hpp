@@ -18,7 +18,7 @@ struct Config {
         bool accesLog = true;
 
         size_t listenBacklog = SOMAXCONN;
-        uint32_t fullReadTimeoutMs = 1000;
+        uint32_t fullReadTimeoutMs = 2000;
         size_t maxUrlLength = 512;
         // maxRequestHeaderSize is actually the max size of request line + all headers
         // 1024 is enough for most requests, mostly less than MTU
