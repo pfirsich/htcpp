@@ -174,83 +174,87 @@ std::string sign(const std::string& input, EVP_PKEY* pkey)
     return encodeBase64Url(sig);
 }
 
-using RsaPtr = std::unique_ptr<RSA, decltype(&RSA_free)>;
+using PkeyPtr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
 
-RsaPtr makeRsaPtr(RSA* ptr)
+PkeyPtr makePkeyPtr(EVP_PKEY* ptr)
 {
-    return RsaPtr(ptr, RSA_free);
+    return PkeyPtr(ptr, EVP_PKEY_free);
 }
 
-RsaPtr generateRsaPrivateKey(size_t numBits)
+PkeyPtr generatePrivateKey(size_t numBits)
 {
-    auto exponent = makeUnique(BN_new(), BN_free);
-    if (!exponent) {
-        return makeRsaPtr(nullptr);
-    }
-    if (!BN_set_word(exponent.get(), RSA_F4)) {
-        return makeRsaPtr(nullptr);
+    auto ctx = makeUnique(EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr), EVP_PKEY_CTX_free);
+    if (!ctx) {
+        return makePkeyPtr(nullptr);
     }
 
-    auto rsa = makeRsaPtr(RSA_new());
-    if (!RSA_generate_key_ex(rsa.get(), static_cast<int>(numBits), exponent.get(), nullptr)) {
-        return makeRsaPtr(nullptr);
+    if (EVP_PKEY_keygen_init(ctx.get()) <= 0) {
+        return makePkeyPtr(nullptr);
     }
 
-    return rsa;
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx.get(), static_cast<int>(numBits)) <= 0) {
+        return makePkeyPtr(nullptr);
+    }
+
+    EVP_PKEY* pkey = nullptr;
+    if (EVP_PKEY_keygen(ctx.get(), &pkey) <= 0) {
+        return makePkeyPtr(nullptr);
+    }
+    return makePkeyPtr(pkey);
 }
 
-bool writeRsaPrivateKey(RSA* rsa, const std::string& path)
+bool writePrivateKey(EVP_PKEY* pkey, const std::string& path)
 {
     auto file = makeUnique(std::fopen(path.c_str(), "w"), std::fclose);
     if (!file) {
         return false;
     }
 
-    if (!PEM_write_RSAPrivateKey(file.get(), rsa, nullptr, nullptr, 0, nullptr, nullptr)) {
+    if (!PEM_write_PrivateKey(file.get(), pkey, nullptr, nullptr, 0, nullptr, nullptr)) {
         return false;
     }
 
     return true;
 }
 
-RsaPtr loadRsaPrivateKey(const std::string& path)
+PkeyPtr loadPrivateKey(const std::string& path)
 {
     auto file = makeUnique(std::fopen(path.c_str(), "r"), std::fclose);
     if (!file) {
-        return makeRsaPtr(nullptr);
+        return makePkeyPtr(nullptr);
     }
 
-    auto rsa = PEM_read_RSAPrivateKey(file.get(), nullptr, nullptr, nullptr);
-    if (!rsa) {
-        return makeRsaPtr(nullptr);
+    auto pkey = PEM_read_PrivateKey(file.get(), nullptr, nullptr, nullptr);
+    if (!pkey) {
+        return makePkeyPtr(nullptr);
     }
 
-    return makeRsaPtr(rsa);
+    return makePkeyPtr(pkey);
 }
 
-RsaPtr getRsaPrivateKey(const std::string& path, size_t numBits)
+PkeyPtr getPrivateKey(const std::string& path, size_t numBits)
 {
     if (fs::exists(path)) {
-        auto rsa = loadRsaPrivateKey(path);
-        if (!rsa) {
+        auto pkey = loadPrivateKey(path);
+        if (!pkey) {
             slog::error("ACME: Could not load account private key from ", path);
-            return makeRsaPtr(nullptr);
+            return makePkeyPtr(nullptr);
         }
-        return rsa;
+        return pkey;
     }
 
-    auto rsa = generateRsaPrivateKey(numBits);
-    if (!rsa) {
+    auto pkey = generatePrivateKey(numBits);
+    if (!pkey) {
         slog::error("ACME: Could not generate account private key");
-        return makeRsaPtr(nullptr);
+        return makePkeyPtr(nullptr);
     }
 
-    if (!writeRsaPrivateKey(rsa.get(), path)) {
+    if (!writePrivateKey(pkey.get(), path)) {
         slog::error("ACME: Could not write account private key to ", path);
-        return makeRsaPtr(nullptr);
+        return makePkeyPtr(nullptr);
     }
 
-    return rsa;
+    return pkey;
 }
 
 struct KeyParameters {
@@ -258,12 +262,20 @@ struct KeyParameters {
     std::vector<std::byte> exponent;
 };
 
-KeyParameters extractKeyParameters(RSA* rsa)
+KeyParameters extractKeyParameters(EVP_PKEY* pkey)
 {
-    const BIGNUM* modulus = nullptr;
-    const BIGNUM* exponent = nullptr;
+    BIGNUM* modulus = nullptr;
+    BIGNUM* exponent = nullptr;
 
+    // I think there is no way to have this compile with OpenSSL 3 without deprecation warnings and
+    // with OpenSSL 1.1.1. Very lame.
+#if OPENSSL_VERSION_NUMBER >= 30303000
+    EVP_PKEY_get_bn_param(pkey, "n", &modulus);
+    EVP_PKEY_get_bn_param(pkey, "e", &exponent);
+#else
+    auto rsa = EVP_PKEY_get0_RSA(pkey);
     RSA_get0_key(rsa, &modulus, &exponent, nullptr);
+#endif
 
     KeyParameters params;
     params.modulus.resize(BN_num_bytes(modulus));
@@ -272,26 +284,6 @@ KeyParameters extractKeyParameters(RSA* rsa)
     BN_bn2bin(exponent, reinterpret_cast<uint8_t*>(params.exponent.data()));
 
     return params;
-}
-
-using EvpPkeyPtr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
-
-EvpPkeyPtr makeEvpPkeyPtr(EVP_PKEY* pkey)
-{
-    return EvpPkeyPtr(pkey, EVP_PKEY_free);
-}
-
-EvpPkeyPtr makePrivateKey(RsaPtr rsa)
-{
-    auto pkey = makeEvpPkeyPtr(EVP_PKEY_new());
-    if (!pkey) {
-        return makeEvpPkeyPtr(nullptr);
-    }
-    const auto res = EVP_PKEY_assign_RSA(pkey.get(), rsa.release());
-    if (!res) {
-        return makeEvpPkeyPtr(nullptr);
-    }
-    return pkey;
 }
 
 std::string getSslError()
@@ -701,19 +693,16 @@ void AcmeClient::threadFunc()
         std::exit(0xac);
     }
 
-    auto accountRsa = getRsaPrivateKey(config_.accountPrivateKeyPath, config_.rsaKeyLength);
-    if (!accountRsa) {
+    auto accountPkey = getPrivateKey(config_.accountPrivateKeyPath, config_.rsaKeyLength);
+    if (!accountPkey) {
         std::exit(0xac);
     }
 
-    const auto keyParams = extractKeyParameters(accountRsa.get());
+    const auto keyParams = extractKeyParameters(accountPkey.get());
 
     const auto jwk = "{\"e\":\"" + encodeBase64Url(keyParams.exponent)
         + "\",\"kty\":\"RSA\",\"n\":\"" + encodeBase64Url(keyParams.modulus) + "\"}";
     const auto jwkThumbprint = sha256(jwk);
-
-    const auto accountPkey = makePrivateKey(std::move(accountRsa));
-    assert(accountPkey);
 
     if (needIssueCertificate()) {
         if (!issueCertificate(jwk, jwkThumbprint, accountPkey.get())) {
@@ -812,13 +801,10 @@ bool AcmeClient::updateContext()
 bool AcmeClient::issueCertificate(
     const std::string& jwk, const std::string& jwkThumbprint, EVP_PKEY* accountPkey)
 {
-    auto certRsa = getRsaPrivateKey(config_.certPrivateKeyPath, config_.rsaKeyLength);
-    if (!certRsa) {
+    auto certPkey = getPrivateKey(config_.certPrivateKeyPath, config_.rsaKeyLength);
+    if (!certPkey) {
         return false;
     }
-
-    auto certPkey = makePrivateKey(std::move(certRsa));
-    assert(certPkey);
 
     const auto csrDer
         = generateCertificateSigningRequest(config_.domain, config_.altNames, certPkey.get());
