@@ -210,13 +210,17 @@ constexpr std::string_view redirectBody = R"(<html>
     </head>
     <body>
         <h1>301 Moved</h1>
-        The document has moved <a href="http://www.google.de/">here</a>.
+        The document has moved <a href="LOCATION">here</a>.
     </body>
 </html>)";
 
 bool HostHandler::redirects(const HostHandler::Host& host, const Request& request,
     std::shared_ptr<Responder> responder) const
 {
+    static constexpr auto locationStart = redirectBody.find("LOCATION");
+    static const auto redirectBodyPrefix = std::string(redirectBody.substr(0, locationStart));
+    static const auto redirectBodySuffix
+        = std::string(redirectBody.substr(locationStart + std::string_view("LOCATION").size()));
 
     for (const auto& entry : host.redirects) {
         const auto res = entry.pattern.match(request.url.path);
@@ -228,7 +232,7 @@ bool HostHandler::redirects(const HostHandler::Host& host, const Request& reques
                 // RFC2616 says the response body SHOULD contain a note with a hyperlink to the new
                 // URL, but if I don't add it, both curl and Firefox stall on the response forever
                 // and never actually follow the redirect.
-                resp.body = redirectBody;
+                resp.body = redirectBodyPrefix + target + redirectBodySuffix;
                 resp.headers.add("Content-Type", "text/html");
             } else if (request.method != Method::Head) {
                 responder->respond(Response(StatusCode::MethodNotAllowed));
