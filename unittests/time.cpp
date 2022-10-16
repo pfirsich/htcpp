@@ -22,5 +22,5 @@ TEST_CASE("TimePoint::parse fails")
 TEST_CASE("TimePoint::getDurationUntil")
 {
     TEST_CHECK(toString(TimePoint { 12, 4, 3 }.getDurationUntil({ 12, 5, 8 })) == "0d0h1m5s");
-    // TEST_CHECK(toString(TimePoint { 23, 59, 59 }.getDurationUntil({ 0, 0, 0 })) == "0d0h0m1s");
+    TEST_CHECK(toString(TimePoint { 23, 59, 59 }.getDurationUntil({ 0, 0, 0 })) == "0d0h0m1s");
 }

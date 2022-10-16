@@ -122,27 +122,16 @@ Duration TimePoint::getDurationUntil(const TimePoint& other) const
     assert(hours < 24 && minutes < 60 && seconds < 60);
     assert(other.hours < 24 && other.minutes < 60 && other.seconds < 60);
 
-    auto ds = static_cast<int>(other.seconds) - static_cast<int>(seconds);
-    auto dm = static_cast<int>(other.minutes) - static_cast<int>(minutes);
-    auto dh = static_cast<int>(other.hours) - static_cast<int>(hours);
+    const auto secs = Duration { 0, hours, minutes, seconds }.toSeconds();
+    const auto otherSecs = Duration { 0, other.hours, other.minutes, other.seconds }.toSeconds();
+
+    auto ds = static_cast<int>(otherSecs) - static_cast<int>(secs);
+
     if (ds < 0) {
-        ds += 60;
-        assert(ds > 0 && ds < 60);
-        dm -= 1;
-    }
-    if (dm < 0) {
-        dm += 60;
-        assert(dm > 0 && dm < 60);
-        dh -= 1;
-    }
-    if (dh < 0) {
-        dh += 24;
-        assert(dh > 0 && dh < 24);
+        ds += 24 * 60 * 60;
     }
 
-    return Duration { 0, static_cast<uint32_t>(dh), static_cast<uint32_t>(dm),
-        static_cast<uint32_t>(ds) }
-        .normalized();
+    return Duration::fromSeconds(ds);
 }
 
 std::string toString(const TimePoint& tp)
