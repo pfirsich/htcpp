@@ -9,9 +9,9 @@ RUN apt-get update && apt-get install --yes \
   && true
 WORKDIR /build/
 COPY src /build/src/
-COPY meson.build /build/
+COPY meson.build meson_options.txt /build/
 COPY subprojects /build/subprojects/
-RUN meson setup build/
+RUN meson setup -Dbuild_libexample=false -Dbuild_unittests=false build/
 RUN meson configure \
   -Dbuildtype=release \
   -Db_lto=true \

@@ -77,23 +77,27 @@ executable('htcpp', bin_src,
   ],
 )
 
-executable('libexample', 'src/libexample.cpp',
-  cpp_args : flags,
-  include_directories : ['src'],
-  dependencies : [
-    htcpp_dep,
-  ],
-)
+if get_option('build_libexample')
+  executable('libexample', 'src/libexample.cpp',
+    cpp_args : flags,
+    include_directories : ['src'],
+    dependencies : [
+      htcpp_dep,
+    ],
+  )
+endif
 
-unittests_src = [
-  'unittests/main.cpp',
-  'unittests/time.cpp',
-]
+if get_option('build_unittests')
+  unittests_src = [
+    'unittests/main.cpp',
+    'unittests/time.cpp',
+  ]
 
-executable('unittests', unittests_src,
-  cpp_args : flags,
-  include_directories : ['src'],
-  dependencies : [
-    htcpp_dep,
-  ],
-)
+  executable('unittests', unittests_src,
+    cpp_args : flags,
+    include_directories : ['src'],
+    dependencies : [
+      htcpp_dep,
+    ],
+  )
+endif

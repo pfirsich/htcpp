@@ -1,0 +1,2 @@
+option('build_unittests', type : 'boolean', value : true)
+option('build_libexample', type : 'boolean', value : true)
