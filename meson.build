@@ -85,14 +85,6 @@ executable('libexample', 'src/libexample.cpp',
   ],
 )
 
-executable('clienttest', 'src/clienttest.cpp',
-  cpp_args : flags,
-  include_directories : ['src'],
-  dependencies : [
-    htcpp_dep,
-  ],
-)
-
 unittests_src = [
   'unittests/main.cpp',
   'unittests/time.cpp',
