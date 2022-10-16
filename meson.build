@@ -92,3 +92,16 @@ executable('clienttest', 'src/clienttest.cpp',
     htcpp_dep,
   ],
 )
+
+unittests_src = [
+  'unittests/main.cpp',
+  'unittests/time.cpp',
+]
+
+executable('unittests', unittests_src,
+  cpp_args : flags,
+  include_directories : ['src'],
+  dependencies : [
+    htcpp_dep,
+  ],
+)
