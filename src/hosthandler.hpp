@@ -17,7 +17,7 @@ public:
 
     HostHandler(const HostHandler& other);
 
-    void operator()(const Request& request, std::shared_ptr<Responder> responder) const;
+    void operator()(const Request& request, std::unique_ptr<Responder> responder) const;
 
 private:
     struct FilesEntry {
@@ -43,21 +43,23 @@ private:
 
     static std::string getMimeType(const std::string& fileExt);
 
-    bool metrics(const Host& host, const Request&, std::shared_ptr<Responder> responder) const;
+    bool isMetricsRoute(const Host& host, const Request& request) const;
+    void respondMetrics(
+        const Host& host, const Request&, std::unique_ptr<Responder> responder) const;
 
 #ifdef TLS_SUPPORT_ENABLED
-    bool acmeChallenges(
-        const Host& host, const Request& request, std::shared_ptr<Responder> responder) const;
+    std::optional<std::string> getAcmeChallenge(const Host& host, const Request& request) const;
+    void respondAcmeChallenge(const std::string& challengeContent, const Request& request,
+        std::unique_ptr<Responder> responder) const;
 #endif
 
-    bool redirects(
-        const Host& host, const Request& request, std::shared_ptr<Responder> responder) const;
+    std::optional<std::string> getRedirect(const Host& host, const Request& request) const;
+    void respondRedirect(const std::string& target, const Request& request,
+        std::unique_ptr<Responder> responder) const;
 
-    bool files(
-        const Host& host, const Request& request, std::shared_ptr<Responder> responder) const;
-
+    std::optional<std::string> getFile(const Host& host, const Request& request) const;
     void respondFile(const Host& host, const std::string& path, const Request& request,
-        std::shared_ptr<Responder> responder) const;
+        std::unique_ptr<Responder> responder) const;
 
     IoQueue& io_;
     FileCache& fileCache_;

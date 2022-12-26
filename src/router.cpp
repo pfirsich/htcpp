@@ -3,7 +3,7 @@
 #include <cassert>
 
 void Router::route(std::string_view pattern,
-    std::function<void(const Request&, const RouteParams&, std::shared_ptr<Responder>)> handler)
+    std::function<void(const Request&, const RouteParams&, std::unique_ptr<Responder>)> handler)
 {
     routes_.push_back(Route { Route::Pattern::parse(pattern), Method::Get, std::move(handler) });
 }
@@ -15,12 +15,12 @@ void Router::route(
         Route::Pattern::parse(pattern),
         Method::Get,
         [handler = std::move(handler)](const Request& request, const RouteParams& params,
-            std::shared_ptr<Responder> responder) { responder->respond(handler(request, params)); },
+            std::unique_ptr<Responder> responder) { responder->respond(handler(request, params)); },
     });
 }
 
 void Router::route(Method method, std::string_view pattern,
-    std::function<void(const Request&, const RouteParams&, std::shared_ptr<Responder>)> handler)
+    std::function<void(const Request&, const RouteParams&, std::unique_ptr<Responder>)> handler)
 {
     routes_.push_back(Route { Route::Pattern::parse(pattern), method, std::move(handler) });
 }
@@ -32,11 +32,11 @@ void Router::route(Method method, std::string_view pattern,
         Route::Pattern::parse(pattern),
         method,
         [handler = std::move(handler)](const Request& request, const RouteParams& params,
-            std::shared_ptr<Responder> responder) { responder->respond(handler(request, params)); },
+            std::unique_ptr<Responder> responder) { responder->respond(handler(request, params)); },
     });
 }
 
-void Router::operator()(const Request& request, std::shared_ptr<Responder> responder) const
+void Router::operator()(const Request& request, std::unique_ptr<Responder> responder) const
 {
     for (const auto& route : routes_) {
         if (route.method != request.method) {

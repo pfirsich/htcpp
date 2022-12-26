@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "fd.hpp"
+#include "function.hpp"
 #include "log.hpp"
 #include "mpscqueue.hpp"
 
@@ -17,7 +18,7 @@ public:
 
     // The read will complete once the counter stored in the eventfd is > 0.
     // Then it will read the current value and reset the counter to 0.
-    bool read(std::function<void(std::error_code, uint64_t)> cb);
+    bool read(Function<void(std::error_code, uint64_t)> cb);
 
     // This will increase the counter stored in the eventfd by `v`.
     // Note that this function writes SYNCHRONOUSLY, so it can be used from other threads, but it
@@ -41,7 +42,7 @@ template <typename Event>
 class EventListener {
 public:
     // The class needs to be constructed from the main thread
-    EventListener(IoQueue& io, std::function<void(Event&& event)> eventHandler)
+    EventListener(IoQueue& io, Function<void(Event&& event)> eventHandler)
         : eventHandler_(std::move(eventHandler))
         , eventFd_(io)
     {
@@ -75,7 +76,7 @@ private:
         });
     }
 
-    std::function<void(Event&& event)> eventHandler_;
+    Function<void(Event&& event)> eventHandler_;
     MpscQueue<Event> queue_;
     EventFd eventFd_;
 };

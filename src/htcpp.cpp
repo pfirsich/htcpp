@@ -79,9 +79,8 @@ int main(int argc, char** argv)
 
     IoQueue io(config.ioQueueSize, config.ioSubmissionQueuePolling);
 
-    // We share a file cache, because we don't need multiple and if we made it a member of
-    // HostHandler, HostHandler would not be copyable anymore, which it needs to be to be part of
-    // std::function (std::function copyable requirement is annoying again..)
+    // We share a file cache, because we don't need to separate them per host (in fact we might risk
+    // duplication otherwise)
     FileCache fileCache(io);
 
     std::vector<std::unique_ptr<Server<TcpConnectionFactory>>> tcpServers;

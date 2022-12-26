@@ -128,7 +128,7 @@ void IoQueue::NotifyHandle::notify(uint64_t value)
     eventFd_.reset();
 }
 
-IoQueue::NotifyHandle IoQueue::wait(std::function<void(std::error_code, uint64_t)> cb)
+IoQueue::NotifyHandle IoQueue::wait(Function<void(std::error_code, uint64_t)> cb)
 {
     auto eventFd = std::make_shared<EventFd>(*this);
     const auto res

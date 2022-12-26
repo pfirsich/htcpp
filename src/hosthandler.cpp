@@ -112,7 +112,7 @@ HostHandler::HostHandler(const HostHandler& other)
 {
 }
 
-void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> responder) const
+void HostHandler::operator()(const Request& request, std::unique_ptr<Responder> responder) const
 {
     const Host* host = nullptr;
     const auto hostHeader = request.headers.get("Host");
@@ -137,31 +137,32 @@ void HostHandler::operator()(const Request& request, std::shared_ptr<Responder> 
         return;
     }
 
-    if (metrics(*host, request, responder)) {
-        return;
+    if (isMetricsRoute(*host, request)) {
+        respondMetrics(*host, request, std::move(responder));
 #ifdef TLS_SUPPORT_ENABLED
-    } else if (acmeChallenges(*host, request, responder)) {
-        return;
+    } else if (const auto challenge = getAcmeChallenge(*host, request)) {
+        respondAcmeChallenge(*challenge, request, std::move(responder));
 #endif
-    } else if (redirects(*host, request, responder)) {
-        return;
-    } else if (files(*host, request, responder)) {
-        return;
+    } else if (const auto redirect = getRedirect(*host, request)) {
+        respondRedirect(*redirect, request, std::move(responder));
+    } else if (const auto file = getFile(*host, request)) {
+        respondFile(*host, *file, request, std::move(responder));
     } else {
-        return responder->respond(Response(StatusCode::NotFound, "Not Found"));
+        responder->respond(Response(StatusCode::NotFound, "Not Found"));
     }
 }
 
-bool HostHandler::metrics(const HostHandler::Host& host, const Request& request,
-    std::shared_ptr<Responder> responder) const
+bool HostHandler::isMetricsRoute(const HostHandler::Host& host, const Request& request) const
 {
-    if (!host.metrics || request.url.path != *host.metrics) {
-        return false;
-    }
+    return host.metrics && request.url.path == *host.metrics;
+}
 
+void HostHandler::respondMetrics(const HostHandler::Host& host, const Request& request,
+    std::unique_ptr<Responder> responder) const
+{
     if (request.method != Method::Get) {
         responder->respond(Response(StatusCode::MethodNotAllowed));
-        return true;
+        return;
     }
 
     io_.async<Response>(
@@ -175,31 +176,32 @@ bool HostHandler::metrics(const HostHandler::Host& host, const Request& request,
             host.addHeaders(requestPath, response);
             responder->respond(std::move(response));
         });
-
-    return true;
 }
 
 #ifdef TLS_SUPPORT_ENABLED
-bool HostHandler::acmeChallenges(
-    const Host& host, const Request& request, std::shared_ptr<Responder> responder) const
+std::optional<std::string> HostHandler::getAcmeChallenge(
+    const Host& host, const Request& request) const
 {
     for (const auto& client : host.acmeChallenges) {
         const auto challenges = client->getChallenges();
         for (const auto& challenge : *challenges) {
             if (challenge.path == request.url.path) {
-                if (request.method != Method::Get) {
-                    responder->respond(Response(StatusCode::MethodNotAllowed));
-                    return true;
-                }
-                // The example in RFC8555 also uses application/octet-stream:
-                // https://www.rfc-editor.org/rfc/rfc8555#section-8.3
-                responder->respond(
-                    Response(StatusCode::Ok, challenge.content, "application/octet-stream"));
-                return true;
+                return challenge.content;
             }
         }
     }
-    return false;
+    return std::nullopt;
+}
+
+void HostHandler::respondAcmeChallenge(const std::string& challengeContent, const Request& request,
+    std::unique_ptr<Responder> responder) const
+{
+    if (request.method != Method::Get) {
+        responder->respond(Response(StatusCode::MethodNotAllowed));
+    }
+    // The example in RFC8555 also uses application/octet-stream:
+    // https://www.rfc-editor.org/rfc/rfc8555#section-8.3
+    responder->respond(Response(StatusCode::Ok, challengeContent, "application/octet-stream"));
 }
 #endif
 
@@ -214,57 +216,59 @@ constexpr std::string_view redirectBody = R"(<html>
     </body>
 </html>)";
 
-bool HostHandler::redirects(const HostHandler::Host& host, const Request& request,
-    std::shared_ptr<Responder> responder) const
+std::optional<std::string> HostHandler::getRedirect(
+    const HostHandler::Host& host, const Request& request) const
+{
+    for (const auto& entry : host.redirects) {
+        const auto res = entry.pattern.match(request.url.path);
+        if (res.match) {
+            return Pattern::replaceGroupReferences(entry.replacement, res.groups);
+        }
+    }
+    return std::nullopt;
+}
+
+void HostHandler::respondRedirect(
+    const std::string& target, const Request& request, std::unique_ptr<Responder> responder) const
 {
     static constexpr auto locationStart = redirectBody.find("LOCATION");
     static const auto redirectBodyPrefix = std::string(redirectBody.substr(0, locationStart));
     static const auto redirectBodySuffix
         = std::string(redirectBody.substr(locationStart + std::string_view("LOCATION").size()));
 
-    for (const auto& entry : host.redirects) {
-        const auto res = entry.pattern.match(request.url.path);
-        if (res.match) {
-            const auto target = Pattern::replaceGroupReferences(entry.replacement, res.groups);
-            auto resp = Response(StatusCode::MovedPermanently);
-            resp.headers.add("Location", target);
-            if (request.method == Method::Get) {
-                // RFC2616 says the response body SHOULD contain a note with a hyperlink to the new
-                // URL, but if I don't add it, both curl and Firefox stall on the response forever
-                // and never actually follow the redirect.
-                resp.body = redirectBodyPrefix + target + redirectBodySuffix;
-                resp.headers.add("Content-Type", "text/html");
-            } else if (request.method != Method::Head) {
-                responder->respond(Response(StatusCode::MethodNotAllowed));
-                return true;
-            }
-            responder->respond(std::move(resp));
-            return true;
-        }
+    auto resp = Response(StatusCode::MovedPermanently);
+    resp.headers.add("Location", target);
+    if (request.method == Method::Get) {
+        // RFC2616 says the response body SHOULD contain a note with a hyperlink to the new
+        // URL, but if I don't add it, both curl and Firefox stall on the response forever
+        // and never actually follow the redirect.
+        resp.body = redirectBodyPrefix + target + redirectBodySuffix;
+        resp.headers.add("Content-Type", "text/html");
+    } else if (request.method != Method::Head) {
+        responder->respond(Response(StatusCode::MethodNotAllowed));
+        return;
     }
-    return false;
+    responder->respond(std::move(resp));
 }
 
-bool HostHandler::files(const HostHandler::Host& host, const Request& request,
-    std::shared_ptr<Responder> responder) const
+std::optional<std::string> HostHandler::getFile(
+    const HostHandler::Host& host, const Request& request) const
 {
     for (const auto& entry : host.files) {
         const auto res = entry.urlPattern.match(request.url.path);
         if (res.match) {
             if (entry.needsGroupReplacement) {
-                const auto path = Pattern::replaceGroupReferences(entry.fsPath, res.groups);
-                respondFile(host, path, request, std::move(responder));
+                return Pattern::replaceGroupReferences(entry.fsPath, res.groups);
             } else {
-                respondFile(host, entry.fsPath, request, std::move(responder));
+                return entry.fsPath;
             }
-            return true;
         }
     }
-    return false;
+    return std::nullopt;
 }
 
 void HostHandler::respondFile(const HostHandler::Host& host, const std::string& path,
-    const Request& request, std::shared_ptr<Responder> responder) const
+    const Request& request, std::unique_ptr<Responder> responder) const
 {
     if (request.method != Method::Get && request.method != Method::Head) {
         responder->respond(Response(StatusCode::MethodNotAllowed));

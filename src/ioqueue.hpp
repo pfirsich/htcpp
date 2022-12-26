@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <future>
 #include <limits>
 #include <system_error>
@@ -9,19 +8,20 @@
 #include <netinet/in.h>
 
 #include "events.hpp"
+#include "function.hpp"
 #include "iouring.hpp"
 #include "log.hpp"
 #include "slotmap.hpp"
 
 class IoQueue {
 private:
-    using CompletionHandler = std::function<void(const io_uring_cqe*)>;
+    using CompletionHandler = Function<void(const io_uring_cqe*)>;
 
     static constexpr auto Ignore = std::numeric_limits<uint64_t>::max();
 
 public:
-    using HandlerEc = std::function<void(std::error_code ec)>;
-    using HandlerEcRes = std::function<void(std::error_code ec, int res)>;
+    using HandlerEc = Function<void(std::error_code ec)>;
+    using HandlerEcRes = Function<void(std::error_code ec, int res)>;
     using Timespec = IoURing::Timespec;
 
     // These are both relative with respect to their arguments, but naming these is hard.
@@ -86,21 +86,19 @@ public:
 
     // This will call a handler callback, when the NotifyHandle is notified.
     // The value passed to NotifyHandle::notify will be passed to the handler cb.
-    NotifyHandle wait(std::function<void(std::error_code, uint64_t)> cb);
+    NotifyHandle wait(Function<void(std::error_code, uint64_t)> cb);
 
     template <typename Result>
-    bool async(std::function<Result()> func, std::function<void(std::error_code, Result&&)> cb)
+    bool async(Function<Result()> func, Function<void(std::error_code, Result&&)> cb)
     {
-        // std::function content needs to be copyable :)
         // Only a minimal amount of hair has been ripped out of my skull because of this.
-        auto prom = std::make_shared<std::promise<Result>>();
-        auto fut = std::make_shared<std::future<Result>>(prom->get_future());
+        std::promise<Result> prom;
         auto handle = wait(
-            [fut = std::move(fut), cb = std::move(cb)](std::error_code ec, uint64_t) mutable {
+            [fut = prom.get_future(), cb = std::move(cb)](std::error_code ec, uint64_t) mutable {
                 if (ec) {
                     cb(ec, Result());
                 } else {
-                    cb(std::error_code(), std::move(fut->get()));
+                    cb(std::error_code(), std::move(fut.get()));
                 }
             });
         if (!handle) {
@@ -111,7 +109,7 @@ public:
         // current use cases.
         std::thread t(
             [func = std::move(func), prom = std::move(prom), handle = std::move(handle)]() mutable {
-                prom->set_value(func());
+                prom.set_value(func());
                 handle.notify();
             });
         t.detach();

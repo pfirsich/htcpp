@@ -13,7 +13,7 @@ EventFd::EventFd(IoQueue& io)
 {
 }
 
-bool EventFd::read(std::function<void(std::error_code, uint64_t)> cb)
+bool EventFd::read(Function<void(std::error_code, uint64_t)> cb)
 {
     assert(fd_ != -1);
     return io_.read(fd_, &readBuf_, sizeof(readBuf_),

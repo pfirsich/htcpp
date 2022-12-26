@@ -23,13 +23,11 @@ struct Responder {
     virtual void respond(Response&& response) = 0;
 };
 
-// I really don't like this interface, but I feel like I have no choice. The "Responder"
+// I don't like this interface, but I feel like it's the most obvious. The "Responder"
 // has to have some kind of type erasure (hence the virtual function), because eventually we need to
 // call into a TCP and a SSL Session, which are different types (different template instantiations).
-// And because we use a virtual function to respond, we need to use some kind of reference-type, but
-// it needs to be copyable, to please std::function (I'm getting really tired of that requirement).
-// I feel like I have no choice but to do it this way.
-using RequestHandler = std::function<void(const Request&, std::shared_ptr<Responder>)>;
+// And because we use a virtual function to respond, we need to use some kind of reference-type.
+using RequestHandler = std::function<void(const Request&, std::unique_ptr<Responder>)>;
 
 // Maybe I should put the function definitions into server.cpp and instantiate the template
 // explicitly for TcpConnection and SslConnection, but I would have include ssl.hpp here, which I do
@@ -65,20 +63,23 @@ private:
     class Session;
 
     struct SessionResponder : public Responder {
-        // shared_ptr on the session to keep it alive as long as this lives
-        std::shared_ptr<Session> session;
+        // ownership of the session to keep it alive as long as this lives
+        std::unique_ptr<Session> session;
 
-        SessionResponder(std::shared_ptr<Session> session)
+        SessionResponder(std::unique_ptr<Session> session)
             : session(std::move(session))
         {
         }
 
-        void respond(Response&& response) override { session->respond(std::move(response)); }
+        void respond(Response&& response) override
+        {
+            assert(session);
+            session->respond(std::move(session), std::move(response));
+        }
     };
 
-    // A Session will have ownership of itself and decide on its own when it's time to be
-    // destroyed
-    class Session : public std::enable_shared_from_this<Session> {
+    // A Session will have ownership of itself, but pass it into io queue handlers also.
+    class Session {
     public:
         Session(std::unique_ptr<Connection> connection, RequestHandler& handler,
             std::string remoteAddr, const Config::Server& serverConfig)
@@ -99,14 +100,10 @@ private:
         Session& operator=(const Session&) = default;
         Session& operator=(Session&&) = default;
 
-        void start()
+        void start(std::unique_ptr<Session> self)
         {
-            // readRequest is not part of the constructor and in this separate method,
-            // because shared_from_this must not be called until the shared_ptr constructor has
-            // completed. You would get a bad_weak_ptr exception in shared_from_this if you called
-            // it from the Session constructor.
             requestStart_ = cpprom::now();
-            readRequest();
+            readRequest(std::move(self));
         }
 
     private:
@@ -122,7 +119,7 @@ private:
             }
         }
 
-        void readRequest()
+        void readRequest(std::unique_ptr<Session> self)
         {
             requestHeaderBuffer_.clear();
             requestBodyBuffer_.clear();
@@ -131,10 +128,7 @@ private:
             const auto recvLen = serverConfig_.maxRequestHeaderSize;
             requestHeaderBuffer_.append(recvLen, '\0');
             connection_->recv(requestHeaderBuffer_.data(), recvLen, &recvTimeout_,
-                // `this->` before `shared_from_this` is necessary or you get an error
-                // because of a dependent type lookup.
-                [this, self = this->shared_from_this(), recvLen](
-                    std::error_code ec, int readBytes) {
+                [this, self = std::move(self), recvLen](std::error_code ec, int readBytes) mutable {
                     if (ec) {
                         Metrics::get().recvErrors.labels(ec.message()).inc();
                         slog::error("Error in recv (headers): ", ec.message());
@@ -145,8 +139,9 @@ private:
                         // A notable exception is ECANCELED caused by an expiration of the read
                         // timeout.
                         if (ec.value() == ECANCELED) {
-                            connection_->shutdown([this, self = this->shared_from_this()](
-                                                      std::error_code) { connection_->close(); });
+                            connection_->shutdown(
+                                [this, self = std::move(self)](
+                                    std::error_code) mutable { connection_->close(); });
                         } else {
                             connection_->close();
                         }
@@ -164,7 +159,8 @@ private:
                     if (!request) {
                         accessLog("INVALID REQUEST", StatusCode::BadRequest, 0);
                         Metrics::get().reqErrors.labels("parse error").inc();
-                        respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
+                        respond(std::move(self),
+                            "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                         return;
                     }
                     request_ = std::move(*request);
@@ -176,29 +172,31 @@ private:
                             accessLog(
                                 "INVALID REQUEST (Content-Length)", StatusCode::BadRequest, 0);
                             Metrics::get().reqErrors.labels("invalid length").inc();
-                            respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
+                            respond(std::move(self),
+                                "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                             return;
                         }
 
                         if (*length > serverConfig_.maxRequestBodySize) {
                             accessLog("INVALID REQUEST (body size)", StatusCode::BadRequest, 0);
                             Metrics::get().reqErrors.labels("body too large").inc();
-                            respond("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
+                            respond(std::move(self),
+                                "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n", false);
                         } else if (request_.body.size() < *length) {
                             requestBodyBuffer_.append(request_.body);
                             request_.body = std::string_view();
-                            readRequestBody(*length);
+                            readRequestBody(std::move(self), *length);
                         } else {
                             request_.body = request_.body.substr(0, *length);
-                            processRequest(request_);
+                            processRequest(std::move(self), request_);
                         }
                     } else {
-                        processRequest(request_);
+                        processRequest(std::move(self), request_);
                     }
                 });
         }
 
-        void readRequestBody(size_t contentLength)
+        void readRequestBody(std::unique_ptr<Session> self, size_t contentLength)
         {
             const auto sizeBeforeRead = requestBodyBuffer_.size();
             assert(sizeBeforeRead < contentLength);
@@ -206,8 +204,8 @@ private:
             requestBodyBuffer_.append(recvLen, '\0');
             auto buffer = requestBodyBuffer_.data() + sizeBeforeRead;
             connection_->recv(buffer, recvLen, &recvTimeout_,
-                [this, self = this->shared_from_this(), recvLen, contentLength](
-                    std::error_code ec, int readBytes) {
+                [this, self = std::move(self), recvLen, contentLength](
+                    std::error_code ec, int readBytes) mutable {
                     if (ec) {
                         Metrics::get().recvErrors.labels(ec.message()).inc();
                         slog::error("Error in recv (body): ", ec.message());
@@ -223,11 +221,11 @@ private:
                     requestBodyBuffer_.resize(requestBodyBuffer_.size() - recvLen + readBytes);
 
                     if (requestBodyBuffer_.size() < contentLength) {
-                        readRequestBody(contentLength);
+                        readRequestBody(std::move(self), contentLength);
                     } else {
                         assert(requestBodyBuffer_.size() == contentLength);
                         request_.body = std::string_view(requestBodyBuffer_);
-                        processRequest(request_);
+                        processRequest(std::move(self), request_);
                     }
                 });
         }
@@ -251,7 +249,7 @@ private:
             return false;
         }
 
-        void processRequest(const Request& request)
+        void processRequest(std::unique_ptr<Session> self, const Request& request)
         {
             Metrics::get()
                 .reqHeaderSize.labels(toString(request.method), request.url.path)
@@ -259,10 +257,10 @@ private:
             Metrics::get()
                 .reqBodySize.labels(toString(request.method), request.url.path)
                 .observe(requestBodyBuffer_.size());
-            handler_(request, std::make_shared<SessionResponder>(this->shared_from_this()));
+            handler_(request, std::make_unique<SessionResponder>(std::move(self)));
         }
 
-        void respond(Response&& response)
+        void respond(std::unique_ptr<Session> self, Response&& response)
         {
             response_ = std::move(response);
             const auto status = std::to_string(static_cast<int>(response_.status));
@@ -270,10 +268,10 @@ private:
                 .reqsTotal.labels(toString(request_.method), request_.url.path, status)
                 .inc();
             accessLog(request_.requestLine, response_.status, response_.body.size());
-            respond(response_.string(request_.version), getKeepAlive(request_));
+            respond(std::move(self), response_.string(request_.version), getKeepAlive(request_));
         }
 
-        void respond(std::string response, bool keepAlive)
+        void respond(std::unique_ptr<Session> self, std::string response, bool keepAlive)
         {
             // We need to keep the memory that is referenced in the SQE around, because we don't
             // know when the kernel will copy it, so we save it in this member variable, which
@@ -283,15 +281,15 @@ private:
             responseBuffer_ = std::move(response);
             responseSendOffset_ = 0;
             keepAlive_ = keepAlive;
-            sendResponse();
+            sendResponse(std::move(self));
         }
 
-        void sendResponse()
+        void sendResponse(std::unique_ptr<Session> self)
         {
             assert(responseSendOffset_ < responseBuffer_.size());
             connection_->send(responseBuffer_.data() + responseSendOffset_,
                 responseBuffer_.size() - responseSendOffset_,
-                [this, self = this->shared_from_this()](std::error_code ec, int sentBytes) {
+                [this, self = std::move(self)](std::error_code ec, int sentBytes) mutable {
                     if (ec) {
                         // I think there are no errors, where we want to shutdown.
                         // Note that ec could be an error that can not be returned by ::send,
@@ -314,7 +312,7 @@ private:
                     assert(sentBytes > 0);
                     if (responseSendOffset_ + sentBytes < responseBuffer_.size()) {
                         responseSendOffset_ += sentBytes;
-                        sendResponse();
+                        sendResponse(std::move(self));
                         return;
                     }
 
@@ -330,18 +328,18 @@ private:
                         .observe(responseBuffer_.size());
 
                     if (keepAlive_) {
-                        start();
+                        start(std::move(self));
                     } else {
-                        shutdown();
+                        shutdown(std::move(self));
                     }
                 });
         }
 
         // If this only supported TCP, then using close everywhere would be fine.
         // The difference is most important for TLS, where shutdown will call SSL_shutdown.
-        void shutdown()
+        void shutdown(std::unique_ptr<Session> self)
         {
-            connection_->shutdown([this, self = this->shared_from_this()](std::error_code) {
+            connection_->shutdown([this, self = std::move(self)](std::error_code) {
                 // There is no way to recover, so ignore the error and close either way.
                 connection_->close();
             });
@@ -399,7 +397,8 @@ private:
             const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
             auto conn = connectionFactory_.create(io_, fd);
             if (conn) {
-                std::make_shared<Session>(std::move(conn), handler_, addr, config_)->start();
+                auto session = std::make_unique<Session>(std::move(conn), handler_, addr, config_);
+                session->start(std::move(session));
             } else {
                 slog::info("Could not create connection object (connection factory not ready)");
                 io_.close(fd, [](std::error_code) {});
