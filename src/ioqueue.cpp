@@ -155,7 +155,9 @@ void IoQueue::run()
             continue;
         }
         const auto cqe = ring_.peekCqe();
-        assert(cqe);
+        if (!cqe) {
+            continue;
+        }
 
         if (cqe->user_data != Ignore) {
             assert(completionHandlers_.contains(cqe->user_data));
