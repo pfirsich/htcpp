@@ -418,6 +418,12 @@ std::optional<std::vector<Config::Service>> loadServices(const joml::Node& node)
                     return std::nullopt;
                 }
                 service.accesLog = svalue.asBool();
+            } else if (skey == "limit_connections") {
+                if (!svalue.isInteger()) {
+                    slog::error("'limit_connections' must be an integer");
+                    return std::nullopt;
+                }
+                service.limitConnections = svalue.asInteger();
             } else if (skey == "tls") {
                 if (!svalue.isDictionary()) {
                     slog::error("'tls' must be a dictionary");

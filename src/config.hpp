@@ -24,6 +24,9 @@ struct Config {
         // 1024 is enough for most requests, mostly less than MTU
         size_t maxRequestHeaderSize = 1024;
         size_t maxRequestBodySize = 1024;
+
+        std::optional<size_t> limitConnections;
+
     };
 
     struct Service : public Server {

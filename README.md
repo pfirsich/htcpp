@@ -54,7 +54,7 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
     - Respond with 429/503 or start refusing connections if overloaded (likely both, but at different levels?)
-    - Add concurrency limit (max number of concurrent connections)
+    - Only parse request line to determine if a handler exists and answer 404/405 and close (avoid big bogus POSTs eating up bandwidth).
 * TLS SNI (then move `tls` object into `hosts`)
 * Currently the response body is copied from the response object (argument to respond) to the responseBuffer before sending. Somehow avoid this copy. (send header and body separately?).
 * Split off the library part better, so htcpp can actually be used as a library cleanly
@@ -68,8 +68,8 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 ## To Do (Could)
 * Large file transfer (with `sendfile` or `slice`)
     - Partial Content ([Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range))
-* IPv6
 * Reverse proxy mode
+* IPv6
 * Customizable access log: Have the option to include some request headers, like Referer or User-Agent
 * LuaJIT for scripting dynamic websites
 * Request pool/arena allocator (only allocate a big buffer once per request and use it as the backing memory for an arena allocator)

@@ -82,18 +82,20 @@ private:
     class Session {
     public:
         Session(std::unique_ptr<Connection> connection, RequestHandler& handler,
-            std::string remoteAddr, const Config::Server& serverConfig)
+            std::string remoteAddr, size_t* numSessions, const Config::Server& serverConfig)
             : connection_(std::move(connection))
             , handler_(handler)
             , remoteAddr_(std::move(remoteAddr))
             , trackInProgressHandle_(Metrics::get().connActive.labels().trackInProgress())
+            , numConnections_(numSessions)
             , serverConfig_(serverConfig)
         {
             requestHeaderBuffer_.reserve(serverConfig_.maxRequestHeaderSize);
             requestBodyBuffer_.reserve(serverConfig_.maxRequestBodySize);
+            (*numConnections_)++;
         }
 
-        ~Session() = default;
+        ~Session() { (*numConnections_)--; }
 
         Session(const Session&) = default;
         Session(Session&&) = default;
@@ -360,6 +362,7 @@ private:
         IoQueue::Timespec recvTimeout_;
         cpprom::Gauge::TrackInProgressHandle trackInProgressHandle_;
         double requestStart_;
+        size_t* numConnections_;
         const Config::Server& serverConfig_;
         size_t responseSendOffset_ = 0;
         bool keepAlive_;
@@ -394,13 +397,20 @@ private:
         } else {
             static auto& connAccepted = Metrics::get().connAccepted.labels();
             connAccepted.inc();
-            const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
-            auto conn = connectionFactory_.create(io_, fd);
-            if (conn) {
-                auto session = std::make_unique<Session>(std::move(conn), handler_, addr, config_);
-                session->start(std::move(session));
+
+            if (!config_.limitConnections || numConnections_ < *config_.limitConnections) {
+                const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
+                auto conn = connectionFactory_.create(io_, fd);
+                if (conn) {
+                    auto session = std::make_unique<Session>(
+                        std::move(conn), handler_, addr, &numConnections_, config_);
+                    session->start(std::move(session));
+                } else {
+                    slog::info("Could not create connection object (connection factory not ready)");
+                    io_.close(fd, [](std::error_code) {});
+                }
             } else {
-                slog::info("Could not create connection object (connection factory not ready)");
+                slog::info("Max concurrent connections limit reached");
                 io_.close(fd, [](std::error_code) {});
             }
         }
@@ -415,4 +425,5 @@ private:
     ::socklen_t acceptAddrLen_;
     ConnectionFactory connectionFactory_;
     Config::Server config_;
+    size_t numConnections_ = 0;
 };
