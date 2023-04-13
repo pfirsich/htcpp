@@ -1,0 +1,15 @@
+services: {
+    "0.0.0.0:6969": {
+        access_log: true
+        limit_connections: 512
+        limit_requests_by_ip: {
+            steady_rate: 5
+            burst_size: 50
+        }
+        hosts: {
+            "*": {
+                files: "."
+            }
+        }
+    }
+}

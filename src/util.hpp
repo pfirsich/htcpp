@@ -13,3 +13,5 @@ struct IpPort {
 std::string errnoToString(int err);
 std::optional<uint32_t> parseIpAddress(const std::string& str);
 std::optional<std::string> readFile(const std::string& path);
+
+uint64_t nowMillis();

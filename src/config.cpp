@@ -74,6 +74,25 @@ bool loadSingle(const joml::Node& value, std::string_view name, std::string_view
     return true;
 }
 
+template <typename T>
+bool loadInteger(const joml::Node& value, std::string_view name, T& dest)
+{
+    int64_t i = 0;
+    if (!loadSingle(value, name, "integer", i)) {
+        return false;
+    }
+
+    constexpr int64_t min = std::numeric_limits<T>::min();
+    constexpr int64_t max = std::numeric_limits<T>::max();
+    if (i < min || i > max) {
+        slog::error("'", name, "' must be in [", min, ", ", max, "]");
+        return false;
+    }
+
+    dest = static_cast<T>(i);
+    return true;
+}
+
 bool load(const joml::Node& value, std::string_view name, bool& dest)
 {
     return loadSingle(value, name, "boolean", dest);
@@ -424,6 +443,27 @@ std::optional<std::vector<Config::Service>> loadServices(const joml::Node& node)
                     return std::nullopt;
                 }
                 service.limitConnections = svalue.asInteger();
+            } else if (skey == "limit_requests_by_ip") {
+                if (!svalue.isDictionary()) {
+                    slog::error("'limit_requests_by_ip' must be a dictionary");
+                    return std::nullopt;
+                }
+                service.limitRequestsByIp.emplace();
+                for (const auto& [lkey, lvalue] : svalue.asDictionary()) {
+                    if (lkey == "steady_rate") {
+                        CHECK_OR_NULLOPT(loadInteger(
+                            lvalue, "steady_rate", service.limitRequestsByIp->steadyRate));
+                    } else if (lkey == "burst_size") {
+                        CHECK_OR_NULLOPT(loadInteger(
+                            lvalue, "burst_size", service.limitRequestsByIp->burstSize));
+                    } else if (lkey == "max_num_entries") {
+                        CHECK_OR_NULLOPT(loadInteger(
+                            lvalue, "max_num_entries", service.limitRequestsByIp->maxNumEntries));
+                    } else {
+                        slog::error("Invalid key '", lkey, "'");
+                        return std::nullopt;
+                    }
+                }
             } else if (skey == "tls") {
                 if (!svalue.isDictionary()) {
                     slog::error("'tls' must be a dictionary");

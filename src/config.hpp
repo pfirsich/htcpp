@@ -27,6 +27,15 @@ struct Config {
 
         std::optional<size_t> limitConnections;
 
+        struct LimitRequestsByIp {
+            uint32_t steadyRate = 5;
+            uint32_t burstSize = 50;
+            size_t maxNumEntries = 16384;
+        };
+
+        // Rate limiting by transferred data is an option, but weird.
+        // Global Rate limiting (regardless of IP) is probably just worse.
+        std::optional<LimitRequestsByIp> limitRequestsByIp;
     };
 
     struct Service : public Server {

@@ -104,3 +104,11 @@ std::optional<std::string> readFile(const std::string& path)
     }
     return buf;
 }
+
+uint64_t nowMillis()
+{
+    ::timespec ts;
+    // Errors are ignored on purpose
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / (1000 * 1000);
+}

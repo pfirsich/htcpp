@@ -15,6 +15,7 @@ Currently it has the following features:
 * [JOML](https://github.com/pfirsich/joml) configuration files ([examples](./configs))
 * `ETag` and `Last-Modified` headers and support for `If-None-Match` and `If-Modified-Since`
 * Header Editing Rules ([header-editing.joml](./configs/header-editing.joml))
+* IP rate limiting and limiting the number of concurrent connections ([limits.joml](./configs/limits.joml))
 
 It requires io_uring features that are available since kernel 5.11, so it will exit immediately on earlier kernels.
 
@@ -53,8 +54,7 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 
 ## To Do (Should)
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
-    - Respond with 429/503 or start refusing connections if overloaded (likely both, but at different levels?)
-    - Only parse request line to determine if a handler exists and answer 404/405 and close (avoid big bogus POSTs eating up bandwidth).
+    - Only parse request line to determine if a handler exists then respond 404/405 and close as soon as possible (avoid big bogus POSTs eating up bandwidth).
 * TLS SNI (then move `tls` object into `hosts`)
 * Currently the response body is copied from the response object (argument to respond) to the responseBuffer before sending. Somehow avoid this copy. (send header and body separately?).
 * Split off the library part better, so htcpp can actually be used as a library cleanly

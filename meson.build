@@ -26,6 +26,7 @@ lib_src = [
   'src/server.cpp',
   'src/string.cpp',
   'src/tcp.cpp',
+  'src/tokenbucket.cpp',
   'src/time.cpp',
   'src/util.cpp',
 ]

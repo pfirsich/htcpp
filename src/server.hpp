@@ -4,17 +4,19 @@
 #include <string>
 #include <vector>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include "config.hpp"
 #include "fd.hpp"
 #include "http.hpp"
 #include "ioqueue.hpp"
 #include "log.hpp"
+#include "lrucache.hpp"
 #include "metrics.hpp"
+#include "tokenbucket.hpp"
 #include "util.hpp"
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 Fd createTcpListenSocket(uint16_t listenPort, uint32_t listenAddr, int backlog);
 
@@ -45,6 +47,7 @@ public:
         , handler_(std::move(handler))
         , connectionFactory_(std::move(factory))
         , config_(std::move(config))
+        , ipTokenBuckets_(config_.limitRequestsByIp ? config_.limitRequestsByIp->maxNumEntries : 0)
     {
         if (listenSocket_ == -1) {
             slog::fatal("Could not create listen socket: ", errnoToString(errno));
@@ -162,6 +165,16 @@ private:
                         return;
                     }
                     request_ = std::move(*request);
+
+                    // We have to check here and not in Server, because it might be the Nth request
+                    // on the same connection that should be rate limited.
+                    if (server_.isLimited(remoteAddr_)) {
+                        accessLog("IP RATE LIMITED", StatusCode::TooManyRequests, 0);
+                        Metrics::get().reqErrors.labels("rate limited").inc();
+                        respond(std::move(self),
+                            "HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n", false);
+                        return;
+                    }
 
                     const auto contentLength = request_.headers.get("Content-Length");
                     if (contentLength) {
@@ -387,6 +400,21 @@ private:
         }
     }
 
+    bool isLimited(uint32_t addr)
+    {
+        if (!config_.limitRequestsByIp) {
+            return false;
+        }
+        const auto bucket = ipTokenBuckets_.get(addr);
+        if (bucket) {
+            const auto couldPull = bucket->pull();
+            return !couldPull;
+        }
+        const auto& limitConfig = config_.limitRequestsByIp.value();
+        ipTokenBuckets_.set(addr, TokenBucket(limitConfig.burstSize, limitConfig.steadyRate));
+        return false;
+    }
+
     void handleAccept(std::error_code ec, int fd)
     {
         if (ec) {
@@ -423,4 +451,5 @@ private:
     ConnectionFactory connectionFactory_;
     Config::Server config_;
     size_t numConnections_ = 0;
+    LRUCache<uint32_t, TokenBucket> ipTokenBuckets_;
 };
