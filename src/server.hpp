@@ -81,21 +81,19 @@ private:
     // A Session will have ownership of itself, but pass it into io queue handlers also.
     class Session {
     public:
-        Session(std::unique_ptr<Connection> connection, RequestHandler& handler,
-            std::string remoteAddr, size_t* numSessions, const Config::Server& serverConfig)
-            : connection_(std::move(connection))
-            , handler_(handler)
-            , remoteAddr_(std::move(remoteAddr))
+        Session(Server& server, std::unique_ptr<Connection> connection, in_addr remoteAddr)
+            : server_(server)
+            , connection_(std::move(connection))
+            , remoteAddr_(remoteAddr.s_addr)
+            , remoteAddrStr_(::inet_ntoa(remoteAddr))
             , trackInProgressHandle_(Metrics::get().connActive.labels().trackInProgress())
-            , numConnections_(numSessions)
-            , serverConfig_(serverConfig)
         {
-            requestHeaderBuffer_.reserve(serverConfig_.maxRequestHeaderSize);
-            requestBodyBuffer_.reserve(serverConfig_.maxRequestBodySize);
-            (*numConnections_)++;
+            requestHeaderBuffer_.reserve(server_.config_.maxRequestHeaderSize);
+            requestBodyBuffer_.reserve(server_.config_.maxRequestBodySize);
+            server_.numConnections_++;
         }
 
-        ~Session() { (*numConnections_)--; }
+        ~Session() { server_.numConnections_--; }
 
         Session(const Session&) = default;
         Session(Session&&) = default;
@@ -115,9 +113,9 @@ private:
         void accessLog(std::string_view requestLine, StatusCode responseStatus,
             size_t responseContentLength) const
         {
-            if (serverConfig_.accesLog) {
-                slog::info(remoteAddr_, " \"", requestLine, "\" ", static_cast<int>(responseStatus),
-                    " ", responseContentLength);
+            if (server_.config_.accesLog) {
+                slog::info(remoteAddrStr_, " \"", requestLine, "\" ",
+                    static_cast<int>(responseStatus), " ", responseContentLength);
             }
         }
 
@@ -125,9 +123,9 @@ private:
         {
             requestHeaderBuffer_.clear();
             requestBodyBuffer_.clear();
-            IoQueue::setAbsoluteTimeout(&recvTimeout_, serverConfig_.fullReadTimeoutMs);
+            IoQueue::setAbsoluteTimeout(&recvTimeout_, server_.config_.fullReadTimeoutMs);
 
-            const auto recvLen = serverConfig_.maxRequestHeaderSize;
+            const auto recvLen = server_.config_.maxRequestHeaderSize;
             requestHeaderBuffer_.append(recvLen, '\0');
             connection_->recv(requestHeaderBuffer_.data(), recvLen, &recvTimeout_,
                 [this, self = std::move(self), recvLen](std::error_code ec, int readBytes) mutable {
@@ -141,9 +139,7 @@ private:
                         // A notable exception is ECANCELED caused by an expiration of the read
                         // timeout.
                         if (ec.value() == ECANCELED) {
-                            connection_->shutdown(
-                                [this, self = std::move(self)](
-                                    std::error_code) mutable { connection_->close(); });
+                            shutdown(std::move(self));
                         } else {
                             connection_->close();
                         }
@@ -179,7 +175,7 @@ private:
                             return;
                         }
 
-                        if (*length > serverConfig_.maxRequestBodySize) {
+                        if (*length > server_.config_.maxRequestBodySize) {
                             accessLog("INVALID REQUEST (body size)", StatusCode::BadRequest, 0);
                             Metrics::get().reqErrors.labels("body too large").inc();
                             respond(std::move(self),
@@ -259,7 +255,7 @@ private:
             Metrics::get()
                 .reqBodySize.labels(toString(request.method), request.url.path)
                 .observe(requestBodyBuffer_.size());
-            handler_(request, std::make_unique<SessionResponder>(std::move(self)));
+            server_.handler_(request, std::make_unique<SessionResponder>(std::move(self)));
         }
 
         void respond(std::unique_ptr<Session> self, Response&& response)
@@ -347,9 +343,10 @@ private:
             });
         }
 
+        Server& server_;
         std::unique_ptr<Connection> connection_;
-        RequestHandler& handler_;
-        std::string remoteAddr_;
+        uint32_t remoteAddr_;
+        std::string remoteAddrStr_;
         // The Request object is the result of request header parsing and consists of many
         // string_views referencing the buffer that the request was parsed from. If that buffer
         // would have to be resized (because of a large body not yet fully received), these
@@ -362,8 +359,6 @@ private:
         IoQueue::Timespec recvTimeout_;
         cpprom::Gauge::TrackInProgressHandle trackInProgressHandle_;
         double requestStart_;
-        size_t* numConnections_;
-        const Config::Server& serverConfig_;
         size_t responseSendOffset_ = 0;
         bool keepAlive_;
     };
@@ -416,8 +411,7 @@ private:
             return;
         }
 
-        auto session = std::make_unique<Session>(
-            std::move(conn), handler_, acceptAddr_.sin_addr, &numConnections_, config_);
+        auto session = std::make_unique<Session>(*this, std::move(conn), acceptAddr_.sin_addr);
         session->start(std::move(session));
     }
 
