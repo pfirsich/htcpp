@@ -384,8 +384,11 @@ private:
         bool added = false;
         acceptAddrLen_ = sizeof(acceptAddr_);
         while (!added) {
-            added = io_.accept(listenSocket_, &acceptAddr_, &acceptAddrLen_,
-                [this](std::error_code ec, int fd) { handleAccept(ec, fd); });
+            added = io_.accept(
+                listenSocket_, &acceptAddr_, &acceptAddrLen_, [this](std::error_code ec, int fd) {
+                    handleAccept(ec, fd);
+                    accept();
+                });
         }
     }
 
@@ -394,28 +397,28 @@ private:
         if (ec) {
             slog::error("Error in accept: ", ec.message());
             Metrics::get().acceptErrors.labels(ec.message()).inc();
-        } else {
-            static auto& connAccepted = Metrics::get().connAccepted.labels();
-            connAccepted.inc();
-
-            if (!config_.limitConnections || numConnections_ < *config_.limitConnections) {
-                const auto addr = ::inet_ntoa(acceptAddr_.sin_addr);
-                auto conn = connectionFactory_.create(io_, fd);
-                if (conn) {
-                    auto session = std::make_unique<Session>(
-                        std::move(conn), handler_, addr, &numConnections_, config_);
-                    session->start(std::move(session));
-                } else {
-                    slog::info("Could not create connection object (connection factory not ready)");
-                    io_.close(fd, [](std::error_code) {});
-                }
-            } else {
-                slog::info("Max concurrent connections limit reached");
-                io_.close(fd, [](std::error_code) {});
-            }
+            return;
         }
 
-        accept();
+        static auto& connAccepted = Metrics::get().connAccepted.labels();
+        connAccepted.inc();
+
+        if (config_.limitConnections && numConnections_ >= *config_.limitConnections) {
+            slog::info("Max concurrent connections limit reached");
+            io_.close(fd, [](std::error_code) {});
+            return;
+        }
+
+        auto conn = connectionFactory_.create(io_, fd);
+        if (!conn) {
+            slog::info("Could not create connection object (connection factory not ready)");
+            io_.close(fd, [](std::error_code) {});
+            return;
+        }
+
+        auto session = std::make_unique<Session>(
+            std::move(conn), handler_, acceptAddr_.sin_addr, &numConnections_, config_);
+        session->start(std::move(session));
     }
 
     IoQueue& io_;
