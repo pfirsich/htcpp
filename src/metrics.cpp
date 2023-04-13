@@ -31,7 +31,7 @@ Metrics& Metrics::get()
         reg.counter("htcpp_recv_errors_total", { "errno" }, "Number of errors in recv"),
         reg.counter("htcpp_send_errors_total", { "errno" }, "Number of errors in send"),
         reg.counter(
-            "htcpp_send_errors_total", { "errno" }, "Number of errors while processing request"),
+            "htcpp_request_errors_total", { "cause" }, "Number of errors while processing request"),
 
         reg.counter("htcpp_filecache_queries_total", { "path" },
             "Number of queries towards the file cache"),
