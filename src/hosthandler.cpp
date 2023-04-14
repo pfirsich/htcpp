@@ -71,7 +71,7 @@ HostHandler::HostHandler(IoQueue& io, FileCache& fileCache,
 
                 const auto status = std::filesystem::status(canonical, ec);
                 if (ec) {
-                    slog::error("Could not stat '", canonical.u8string(), "': ", ec.message());
+                    slog::error("Could not stat '", canonical.string(), "': ", ec.message());
                     std::exit(1);
                 }
 

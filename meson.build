@@ -1,4 +1,4 @@
-project('htcpp', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++17'])
+project('htcpp', 'cpp', default_options : ['warning_level=3', 'cpp_std=c++20'])
 
 threads_dep = dependency('threads')
 openssl_dep = dependency('openssl', required : false)

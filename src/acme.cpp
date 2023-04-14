@@ -649,7 +649,7 @@ bool prepareDirectories(const fs::path& path)
     std::error_code ec;
     fs::create_directories(dir, ec);
     if (ec) {
-        slog::error("ACME: Could not create directories '", dir.u8string(), "': ", ec.message());
+        slog::error("ACME: Could not create directories '", dir.string(), "': ", ec.message());
         return false;
     }
     return true;
