@@ -5,6 +5,7 @@ services: {
         limit_requests_by_ip: {
             steady_rate: 5
             burst_size: 50
+            max_num_entries: 8192
         }
         hosts: {
             "*": {

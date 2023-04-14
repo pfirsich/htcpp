@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <filesystem>
+#include <utility>
 
 #include <pwd.h>
 #include <unistd.h>
@@ -82,10 +83,9 @@ bool loadInteger(const joml::Node& value, std::string_view name, T& dest)
         return false;
     }
 
-    constexpr int64_t min = std::numeric_limits<T>::min();
-    constexpr int64_t max = std::numeric_limits<T>::max();
-    if (i < min || i > max) {
-        slog::error("'", name, "' must be in [", min, ", ", max, "]");
+    if (!std::in_range<T>(i)) {
+        slog::error("'", name, "' must be in [", std::numeric_limits<T>::min(), ", ",
+            std::numeric_limits<T>::max(), "]");
         return false;
     }
 
