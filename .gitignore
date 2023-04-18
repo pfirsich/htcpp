@@ -7,5 +7,4 @@ untracked/
 subprojects/*
 !subprojects/*.wrap
 *.pem
-testfiles/
 benchmarks/

@@ -1,0 +1,15 @@
+services: {
+    "127.0.0.1:6969": {
+        access_log: false
+        limit_requests_by_ip: {
+            steady_rate: 1
+            burst_size: 10
+            max_num_entries: 4
+        }
+        hosts: {
+            "*": {
+                files: "testfiles/"
+            }
+        }
+    }
+}
