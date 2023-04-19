@@ -21,8 +21,10 @@ struct Config {
         uint32_t fullReadTimeoutMs = 2000;
         size_t maxUrlLength = 512;
         // maxRequestHeaderSize is actually the max size of request line + all headers
-        // 1024 is enough for most requests, mostly less than MTU
-        size_t maxRequestHeaderSize = 1024;
+        // It would be cool if this was less than MTU, but on Firefox the request header
+        // is 566 bytes long at the time of writing this. If I host my website on localhost
+        // the Cookie header pushes this over 1Ki, so I'll go with 2Ki.
+        size_t maxRequestHeaderSize = 2048;
         size_t maxRequestBodySize = 1024;
 
         std::optional<size_t> limitConnections;
