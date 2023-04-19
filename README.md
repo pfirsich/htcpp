@@ -53,6 +53,7 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 * Nothing right now!
 
 ## To Do (Should)
+* Try to implement as much as possible described in this document: https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023. I need to wait a while for most of it to arrive in my distro kernel.
 * Improve behaviour in case of DDos (esp. in conjunction with Cloudflare DDoS protection) - from here: https://fasterthanli.me/articles/i-won-free-load-testing (great post!)
     - Only parse request line to determine if a handler exists then respond 404/405 and close as soon as possible (avoid big bogus POSTs eating up bandwidth).
 * TLS SNI (then move `tls` object into `hosts`)
@@ -69,7 +70,10 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 * Large file transfer (with `sendfile` or `slice`)
     - Partial Content ([Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range))
 * Reverse proxy mode
+    - Load-Balancing
+    - Maybe pull load-balancing too! (see discussion here: https://news.ycombinator.com/item?id=35588797)
 * IPv6
+* Use coroutines instead of callbacks!
 * Customizable access log: Have the option to include some request headers, like Referer or User-Agent
 * LuaJIT for scripting dynamic websites
 * Request pool/arena allocator (only allocate a big buffer once per request and use it as the backing memory for an arena allocator)
