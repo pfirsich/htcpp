@@ -119,8 +119,8 @@ public:
     void run();
 
 private:
-    size_t addHandler(HandlerEc&& cb);
-    size_t addHandler(HandlerEcRes&& cb);
+    uint64_t addHandler(HandlerEc&& cb);
+    uint64_t addHandler(HandlerEcRes&& cb);
 
     template <typename Callback>
     bool addSqe(io_uring_sqe* sqe, Callback cb);
@@ -130,4 +130,5 @@ private:
 
     IoURing ring_;
     SlotMap<CompletionHandler> completionHandlers_;
+    size_t numOpsQueued_ = 0;
 };

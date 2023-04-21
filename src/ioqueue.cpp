@@ -148,7 +148,7 @@ IoQueue::NotifyHandle IoQueue::wait(Function<void(std::error_code, uint64_t)> cb
 
 void IoQueue::run()
 {
-    while (completionHandlers_.size() > 0) {
+    while (numOpsQueued_ > 0) {
         const auto res = ring_.submitSqes(1);
         if (res < 0) {
             slog::error("Error submitting SQEs: ", errnoToString(errno));
@@ -160,36 +160,40 @@ void IoQueue::run()
         }
 
         if (cqe->user_data != Ignore) {
-            assert(completionHandlers_.contains(cqe->user_data));
+            const auto handler = reinterpret_cast<CompletionHandler*>(cqe->user_data);
             Metrics::get().ioQueueOpsQueued.labels().dec();
-            auto ch = std::move(completionHandlers_[cqe->user_data]);
-            ch(cqe);
-            completionHandlers_.remove(cqe->user_data);
+            (*handler)(cqe);
+            numOpsQueued_--;
+            delete handler;
         }
         ring_.advanceCq();
     }
 }
 
-size_t IoQueue::addHandler(HandlerEc&& cb)
+uint64_t IoQueue::addHandler(HandlerEc&& cb)
 {
-    return completionHandlers_.emplace([cb = std::move(cb)](const io_uring_cqe* cqe) {
-        if (cqe->res < 0) {
-            cb(std::make_error_code(static_cast<std::errc>(-cqe->res)));
-        } else {
-            cb(std::error_code());
-        }
-    });
+    numOpsQueued_++;
+    return reinterpret_cast<uint64_t>(
+        new CompletionHandler { [cb = std::move(cb)](const io_uring_cqe* cqe) {
+            if (cqe->res < 0) {
+                cb(std::make_error_code(static_cast<std::errc>(-cqe->res)));
+            } else {
+                cb(std::error_code());
+            }
+        } });
 }
 
-size_t IoQueue::addHandler(HandlerEcRes&& cb)
+uint64_t IoQueue::addHandler(HandlerEcRes&& cb)
 {
-    return completionHandlers_.emplace([cb = std::move(cb)](const io_uring_cqe* cqe) {
-        if (cqe->res < 0) {
-            cb(std::make_error_code(static_cast<std::errc>(-cqe->res)), -1);
-        } else {
-            cb(std::error_code(), cqe->res);
-        }
-    });
+    numOpsQueued_++;
+    return reinterpret_cast<uint64_t>(
+        new CompletionHandler { [cb = std::move(cb)](const io_uring_cqe* cqe) {
+            if (cqe->res < 0) {
+                cb(std::make_error_code(static_cast<std::errc>(-cqe->res)), -1);
+            } else {
+                cb(std::error_code(), cqe->res);
+            }
+        } });
 }
 
 template <typename Callback>
