@@ -50,7 +50,7 @@ The `--init` is necessary for the container to terminate gracefully. You can rep
 If you wish to use the ACME client, make sure to install root certificates in your image to allow HTTPS requests to the ACME directory (e.g. Let's Encrypt). On Ubuntu for example the corresponding package is called `ca-certificates`.
 
 ## To Do (Must)
-* Nothing right now!
+* Finish todos in [aiopp](https://github.com/pfirsich/aiopp) and then remove stuff from this repository and use aiopp instead.
 
 ## To Do (Should)
 * Try to implement as much as possible described in this document: https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023. I need to wait a while for most of it to arrive in my distro kernel.
