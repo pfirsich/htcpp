@@ -23,23 +23,36 @@ const FileCache::Entry* FileCache::get(const std::string& path)
     Metrics::get().fileCacheQueries.labels(path).inc();
     auto it = entries_.find(path);
     if (it == entries_.end()) {
-        it = entries_.emplace(path, Entry { path }).first;
+        Entry entry { path };
+        // In the past I added an entry and a watch in every case, even if the file does not exist,
+        // so if the file is created at some point, I get a notification to simply mark it outdated
+        // and reload it.
+        // But I don't want it to be possible to create an unbounded number of file cache entries
+        // for files that don't even exist. Also I don't want to waste inotify watches (which are
+        // limited) on non-existent files (the file cache should figure this out, but still).
+        if (!entry.reload()) {
+            Metrics::get().fileCacheFailures.labels(path).inc();
+            return nullptr;
+        }
+        entry.state = Entry::State::UpToDate;
+        it = entries_.emplace(path, std::move(entry)).first;
+
         fileWatcher_.watch(path, [this](std::error_code ec, std::string_view path) {
             if (ec) {
                 entries_.erase(std::string(path));
                 return;
             }
             slog::info("file changed: '", path, "'");
-            entries_.at(std::string(path)).dirty = true;
+            entries_.at(std::string(path)).state = Entry::State::Outdated;
         });
     }
 
-    if (it->second.dirty) {
+    if (it->second.state == Entry::State::Outdated) {
         it->second.reload();
-        // Reset dirty either way (error or not), so that we don't repeatedly try to load a file
-        // that e.g. does not exist.
+        // Set up-to-date either way (error or not), so that we don't repeatedly try to load a file
+        // that was deleted for example.
         // We wait for another modification before we try again.
-        it->second.dirty = false;
+        it->second.state = Entry::State::UpToDate;
     } else {
         Metrics::get().fileCacheHits.labels(path).inc();
     }
@@ -80,13 +93,13 @@ std::optional<std::string> formatTm(const std::tm* tm)
 }
 }
 
-void FileCache::Entry::reload()
+bool FileCache::Entry::reload()
 {
     slog::info("reload file: '", path, "'");
     const auto cont = readFile(path);
     if (!cont) {
         // Error already logged
-        return;
+        return false;
     }
 
     // Using mtime and size is very popular. This is used by Apache, binserve, Caddy, lighthttpd,
@@ -114,7 +127,7 @@ void FileCache::Entry::reload()
     const auto statRes = ::stat(path.c_str(), &st);
     if (statRes != 0) {
         slog::error("Could not stat '", path, "': ", errnoToString(errno));
-        return;
+        return false;
     }
 
     // https://www.rfc-editor.org/rfc/rfc7232#section-2.3
@@ -123,17 +136,18 @@ void FileCache::Entry::reload()
     // long st_size, long int st_mtime
     if (std::snprintf(eTagBuf, sizeof(eTagBuf), "\"%lx-%lx\"", st.st_mtime, st.st_size) < 0) {
         slog::error("Could not format ETag");
-        return;
+        return false;
     }
 
     const auto tm = std::gmtime(&st.st_mtime);
     const auto lm = formatTm(tm);
     if (!lm) {
         // Already logged
-        return;
+        return false;
     }
 
     contents = *cont;
     eTag = eTagBuf;
     lastModified = *lm;
+    return true;
 }

@@ -12,13 +12,15 @@
 class FileCache {
 public:
     struct Entry {
+        enum class State { Outdated, UpToDate };
+
         std::string path;
         std::optional<std::string> contents = std::nullopt;
         std::string eTag = "";
         std::string lastModified = "";
-        bool dirty = true;
+        State state = State::Outdated;
 
-        void reload();
+        bool reload();
     };
 
     FileCache(IoQueue& io);
