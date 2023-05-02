@@ -45,6 +45,7 @@ struct Args : clipp::ArgsBase {
 int main(int argc, char** argv)
 {
     auto parser = clipp::Parser(argv[0]);
+    parser.version("1.1.0");
     const Args args = parser.parse<Args>(argc, argv).value();
     slog::init(args.debug ? slog::Severity::Debug : slog::Severity::Info);
 
