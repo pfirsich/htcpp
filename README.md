@@ -85,6 +85,6 @@ If you wish to use the ACME client, make sure to install root certificates in yo
 ## Won't Do (for now?)
 * Compression: Afaik you are supposed to disable it for images and other already compressed assets (obviously), but since I only plan to serve small HTML pages with this, there is not much use.
 * Support for kTLS: It's probably a good performance improvement, but quite involved and I don't need it.
-* Dispatch HTTP sessions to a thread pool (to increase TLS performance): I will likely only deploy this on very small single vCPU VMs
+* Dispatch HTTP sessions to a thread pool (to increase TLS performance): I will likely only deploy this on very small single vCPU VMs. Note for the future: have a ring per thread and `accept` on the same listening socket on all threads.
 * chroot "jail": According to the man page you should not use these for security, so if you want filesystem isolation, use Docker
 * Dropping privileges: Not hard to do, but the same applies. If you want to deploy it securely, use Docker.
