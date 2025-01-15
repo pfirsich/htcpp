@@ -2,6 +2,7 @@ FROM ubuntu:22.04 as builder
 
 RUN apt-get update && apt-get install --yes \
   clang \
+  git \
   libssl-dev \
   meson \
   ninja-build \
